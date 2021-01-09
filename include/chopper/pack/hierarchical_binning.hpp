@@ -15,6 +15,7 @@
 #include <chopper/pack/pack_config.hpp>
 #include <chopper/pack/print_matrix.hpp>
 #include <chopper/pack/simple_binning.hpp>
+#include <chopper/union/estimate_unions_hll.hpp>
 
 struct hierarchical_binning
 {
@@ -24,7 +25,7 @@ private:
      * The higher alpha, the more weight is added artificially to the low level IBFs and thus the optimal
      * solution will contain less merged bins in the end because it costs more to merge bins.
      */
-    double const alpha{10};
+    double const alpha;
 
     //!\brief The file names of the user input. Since the input might be sorted, we need to keep track of the names.
     std::vector<std::string> & names;
@@ -39,6 +40,13 @@ private:
     size_t const kmer_count_sum;
     //!\brief The average count calculated from kmer_count_sum / num_technical_bins.
     size_t const kmer_count_average_per_bin;
+
+    //!\brief The k of the k-mers.
+    uint8_t const kmer_size;
+    //!\brief The number of bits the HyperLogLog sketch should use to distribute the values into bins.
+    uint8_t const sketch_bits;
+    //!\brief Whether to estimate the union of kmer sets to possibly improve the binning or not.
+    bool const union_estimate;
 
     //!\brief The output stream to cache the results to.
     std::stringstream output_buff;
@@ -64,6 +72,10 @@ public:
         num_technical_bins{(config.bins == 0) ? ((user_bin_kmer_counts.size() + 63) / 64 * 64) : config.bins},
         kmer_count_sum{std::accumulate(user_bin_kmer_counts.begin(), user_bin_kmer_counts.end(), 0u)},
         kmer_count_average_per_bin{std::max<size_t>(1u, kmer_count_sum / num_technical_bins)},
+        kmer_size{config.k},
+        sketch_bits{config.sketch_bits},
+        alpha{config.alpha},
+        union_estimate{config.union_estimate},
         output_filename{config.output_filename}
     {
         std::cout << "#Techincal bins: " << num_technical_bins << std::endl;
@@ -80,6 +92,10 @@ public:
         sort_by_distribution(names, user_bin_kmer_counts);
         // seqan3::debug_stream << std::endl << "Sorted list: " << user_bin_kmer_counts << std::endl << std::endl;
 
+        std::vector<std::vector<size_t>> union_estimates;
+        if (union_estimate)
+            estimate_unions_hll(names, user_bin_kmer_counts, kmer_size, sketch_bits, union_estimates);
+
         std::vector<std::vector<size_t>> matrix(num_technical_bins); // rows
         for (auto & v : matrix)
             v.resize(num_user_bins, std::numeric_limits<size_t>::max()); // columns
@@ -94,7 +110,7 @@ public:
 
         initialization(matrix, ll_matrix, trace);
 
-        recursion(matrix, ll_matrix, trace);
+        recursion(matrix, ll_matrix, trace, union_estimates);
 
         // print_matrix(matrix, num_technical_bins, num_user_bins, std::numeric_limits<size_t>::max());
         // print_matrix(ll_matrix, num_technical_bins, num_user_bins, std::numeric_limits<size_t>::max());
@@ -200,7 +216,8 @@ private:
      */
     void recursion(std::vector<std::vector<size_t>> & matrix,
                    std::vector<std::vector<size_t>> & ll_matrix,
-                   std::vector<std::vector<std::pair<size_t, size_t>>> & trace)
+                   std::vector<std::vector<std::pair<size_t, size_t>>> & trace,
+                   std::vector<std::vector<size_t>> const & union_estimates)
     {
         // we must iterate column wise
         for (size_t j = 1; j < num_user_bins; ++j)
@@ -234,16 +251,24 @@ private:
                 // check horizontal cells
                 size_t j_prime{j - 1};
                 size_t weight{current_weight};
+
+                auto get_weight = [&] () 
+                {
+                    // if we use the union estimate we plug in that value instead of the sum (weight)
+                    // union_estimate[i][j] is the union of {i, ..., i+j}
+                    return union_estimate ? union_estimates[j_prime][j - j_prime] : weight;
+                };
+
                 // if the user bin j-1 was not split into multiple technical bins!
                 // I may merge the current user bin j into the former
-                while (j_prime != 0 && ((i - trace[i][j_prime].first) < 2) && weight < minimum)
+                while (j_prime != 0 && ((i - trace[i][j_prime].first) < 2) /*&& weight < minimum*/)
                 {
                     weight += user_bin_kmer_counts[j_prime];
                     --j_prime;
 
                     // score: The current maximum technical bin size for the high-level IBF (score for the matrix M)
                     // full_score: The score to minimize -> score * #TB-high_level + low_level_memory footprint
-                    size_t score = std::max<size_t>(weight, matrix[i - 1][j_prime]);
+                    size_t score = std::max<size_t>(get_weight(), matrix[i - 1][j_prime]);
                     size_t full_score = score * (i + 1) /*#TBs*/ + alpha * (ll_matrix[i - 1][j_prime] + weight);
 
                     if (full_score < full_minimum)

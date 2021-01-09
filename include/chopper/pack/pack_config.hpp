@@ -7,5 +7,9 @@ struct pack_config
     std::filesystem::path data_file;
     std::filesystem::path output_filename{"binning.out"};
     uint16_t bins{64};
+    uint8_t k{25};
+    uint8_t sketch_bits{12};
+    double alpha{10};
     int aggregate_by_column{-1};
+    bool union_estimate{false};
 };
