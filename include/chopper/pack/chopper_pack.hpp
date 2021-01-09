@@ -29,7 +29,8 @@ int set_up_and_parse_subparser_split(seqan3::argument_parser & parser, pack_conf
     
     parser.add_option(config.sketch_bits, 's', "sketch-bits", "The number of bits the HyperLogLog sketch should use to distribute the values into bins");
 
-    parser.add_option(config.alpha, 'a', "alpha", "A scaling factor to influence the amount of merged bins produced by the algorithm.");
+    parser.add_option(config.alpha, 'a', "alpha",
+                      "The scaling factor to influence the number of merged bins.");
 
     parser.add_option(config.output_filename, 'o', "outfile",
                       "An output file name for the binning results.");

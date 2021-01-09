@@ -20,18 +20,17 @@
 struct hierarchical_binning
 {
 private:
+    //!\brief The file names of the user input. Since the input might be sorted, we need to keep track of the names.
+    std::vector<std::string> & names;
+    //!\brief The kmer counts associated with the above files used to pack user bin into technical bins.
+    std::vector<size_t> & user_bin_kmer_counts;
+
     /*\brief A scaling factor to influence the amount of merged bins produced by the algorithm.
      *
      * The higher alpha, the more weight is added artificially to the low level IBFs and thus the optimal
      * solution will contain less merged bins in the end because it costs more to merge bins.
      */
     double const alpha;
-
-    //!\brief The file names of the user input. Since the input might be sorted, we need to keep track of the names.
-    std::vector<std::string> & names;
-    //!\brief The kmer counts associated with the above files used to pack user bin into technical bins.
-    std::vector<size_t> & user_bin_kmer_counts;
-
     //!\brief The number of user bins, initialised with the length of user_bin_kmer_counts.
     size_t const num_user_bins;
     //!\brief The number of technical bins requested by the user.
@@ -68,13 +67,13 @@ public:
     hierarchical_binning(std::vector<std::string> & names_, std::vector<size_t> & input, pack_config const & config) :
         names{names_},
         user_bin_kmer_counts{input},
+        alpha{config.alpha},
         num_user_bins{input.size()},
         num_technical_bins{(config.bins == 0) ? ((user_bin_kmer_counts.size() + 63) / 64 * 64) : config.bins},
         kmer_count_sum{std::accumulate(user_bin_kmer_counts.begin(), user_bin_kmer_counts.end(), 0u)},
         kmer_count_average_per_bin{std::max<size_t>(1u, kmer_count_sum / num_technical_bins)},
         kmer_size{config.k},
         sketch_bits{config.sketch_bits},
-        alpha{config.alpha},
         union_estimate{config.union_estimate},
         output_filename{config.output_filename}
     {
@@ -237,7 +236,7 @@ private:
                     size_t score = std::max<size_t>(current_weight / (i - i_prime), matrix[i_prime][j-1]);
                     size_t full_score = score * (i + 1) /*#TBs*/ + alpha * ll_matrix[i_prime][j-1];
 
-                    // std::cout << "j:" << j << " i:" << i << " i':" << i_prime << " score:" << score << std::endl;
+                    // std::cout << " ++ j:" << j << " i:" << i << " i':" << i_prime << " score:" << score << std::endl;
 
                     if (full_score < full_minimum)
                     {
@@ -247,6 +246,11 @@ private:
                         ll_matrix[i][j] = ll_matrix[i_prime][j - 1];
                     }
                 }
+
+                // seqan3::debug_stream << "current vertical minimum of " << "j:" << j << " i:" << i
+                //                      << " -> score:" << full_minimum << " (M_ij=" << minimum << ")"
+                //                      << " trace:" << trace[i][j]
+                //                      << std::endl;
 
                 // check horizontal cells
                 size_t j_prime{j - 1};
@@ -270,6 +274,10 @@ private:
                     // full_score: The score to minimize -> score * #TB-high_level + low_level_memory footprint
                     size_t score = std::max<size_t>(get_weight(), matrix[i - 1][j_prime]);
                     size_t full_score = score * (i + 1) /*#TBs*/ + alpha * (ll_matrix[i - 1][j_prime] + weight);
+
+                    // seqan3::debug_stream << " -- " << "j_prime:" << j_prime
+                    //                      << " -> full_score:" << full_score << " (M_{i-1,j'}=" << score << ")"
+                    //                      << std::endl;
 
                     if (full_score < full_minimum)
                     {
