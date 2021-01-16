@@ -12,4 +12,5 @@ struct pack_config
     double alpha{10};
     int aggregate_by_column{-1};
     bool union_estimate{false};
+    bool resort_bins{false};
 };

@@ -45,7 +45,9 @@ private:
     //!\brief The number of bits the HyperLogLog sketch should use to distribute the values into bins.
     uint8_t const sketch_bits;
     //!\brief Whether to estimate the union of kmer sets to possibly improve the binning or not.
-    bool const union_estimate;
+    bool const union_estimate_wanted;
+    //!\brief Whether to do a second sorting of the bins which takes into account similarity or not.
+    bool const resort_bins_wanted;
 
     //!\brief The output stream to cache the results to.
     std::stringstream output_buff;
@@ -74,7 +76,8 @@ public:
         kmer_count_average_per_bin{std::max<size_t>(1u, kmer_count_sum / num_technical_bins)},
         kmer_size{config.k},
         sketch_bits{config.sketch_bits},
-        union_estimate{config.union_estimate},
+        union_estimate_wanted{config.union_estimate},
+        resort_bins_wanted{config.resort_bins},
         output_filename{config.output_filename}
     {
         std::cout << "#Techincal bins: " << num_technical_bins << std::endl;
@@ -92,9 +95,17 @@ public:
         // seqan3::debug_stream << std::endl << "Sorted list: " << user_bin_kmer_counts << std::endl << std::endl;
 
         std::vector<std::vector<size_t>> union_estimates;
-        if (union_estimate)
-            estimate_unions_hll(names, user_bin_kmer_counts, kmer_size, sketch_bits, union_estimates);
+        union_estimate estimator(names, user_bin_kmer_counts, kmer_size, sketch_bits);
 
+        if (union_estimate_wanted)
+        {
+            estimator.build_hlls();
+
+            if (resort_bins_wanted) estimator.resort_bins();
+            
+            estimator.estimate_unions(union_estimates);
+        }
+        
         std::vector<std::vector<size_t>> matrix(num_technical_bins); // rows
         for (auto & v : matrix)
             v.resize(num_user_bins, std::numeric_limits<size_t>::max()); // columns
@@ -260,12 +271,12 @@ private:
                 {
                     // if we use the union estimate we plug in that value instead of the sum (weight)
                     // union_estimate[i][j] is the union of {i, ..., i+j}
-                    return union_estimate ? union_estimates[j_prime][j - j_prime] : weight;
+                    return union_estimate_wanted ? union_estimates[j_prime][j - j_prime] : weight;
                 };
 
                 // if the user bin j-1 was not split into multiple technical bins!
                 // I may merge the current user bin j into the former
-                while (j_prime != 0 && ((i - trace[i][j_prime].first) < 2) /*&& weight < minimum*/)
+                while (j_prime != 0 && ((i - trace[i][j_prime].first) < 2) && get_weight() < minimum)
                 {
                     weight += user_bin_kmer_counts[j_prime];
                     --j_prime;

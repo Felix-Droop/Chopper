@@ -27,7 +27,8 @@ int set_up_and_parse_subparser_split(seqan3::argument_parser & parser, pack_conf
 
     parser.add_option(config.k, 'k', "kmer-size", "The kmer size for the union estimate.");
     
-    parser.add_option(config.sketch_bits, 's', "sketch-bits", "The number of bits the HyperLogLog sketch should use to distribute the values into bins");
+    parser.add_option(config.sketch_bits, 's', "sketch-bits", 
+                      "The number of bits the HyperLogLog sketch should use to distribute the values into bins");
 
     parser.add_option(config.alpha, 'a', "alpha",
                       "The scaling factor to influence the number of merged bins.");
@@ -42,6 +43,9 @@ int set_up_and_parse_subparser_split(seqan3::argument_parser & parser, pack_conf
 
     parser.add_flag(config.union_estimate, 'u', "union-estimate",
                     "Estimate the union of kmer sets to possibly improve the binning");
+    
+    parser.add_flag(config.resort_bins, 'r', "resort-bins",
+                    "Do a second sorting of the bins which takes into account similarity. Only works with -u.");
 
     try
     {

@@ -151,6 +151,7 @@ public:
         for (uint32_t r = 0; r < m_; ++r) {
             if (M_[r] < other.M_[r]) {
                 // possible bugfix
+                // _mm256_max_epu8()
                 M_[r] = other.M_[r];
             }
         }
