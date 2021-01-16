@@ -8,13 +8,7 @@
 
 #include <chopper/union/hyperloglog.hpp>
 
-/*!\brief For all intervals of names: estimate the cardinality of the union of all sequences in the files of the interval
-    * \param[in] names names of the sequence files
-    * \param[in] user_bin_kmer_counts cardinalities of the single sets for the diagonal of the output table
-    * \param[in] kmer_size size of k-mers
-    * \param[in] sketch_bits The number of bits the HyperLogLog sketch should use to distribute the values into bins
-    * \param[out] union_estimates output table
-    */
+//!\brief class to supply estimated cardinalities of unions of user bins to the hierarchical binning algorithm
 struct union_estimate
 {
 private:
