@@ -16,9 +16,9 @@
 
 #include <chopper/build/batch.hpp>
 #include <chopper/build/build_config.hpp>
-#include <chopper/build/parse_traversal_file_line.hpp>
+#include <chopper/build/compute_bin_size.hpp>
 #include <chopper/build/read_data_file_and_set_high_level_bins.hpp>
-#include <chopper/build/read_traversal_file.hpp>
+#include <chopper/build/read_chopper_split_file.hpp>
 #include <chopper/detail_bin_prefixes.hpp>
 
 struct file_type_traits : public seqan3::sequence_file_input_default_traits_dna
@@ -52,16 +52,12 @@ auto hash_infix(build_config const & config, auto const & seq, auto const begin,
                | seqan3::views::kmer_hash(seqan3::ungapped{config.k});
 };
 
-size_t compute_bin_size(build_config const & config, size_t const number_of_kmers_to_be_stored)
-{
-    return (size_t)std::ceil((-(double)(config.hash_funs * number_of_kmers_to_be_stored)) /
-                   (std::log(1 - std::pow(10.0, std::log10(config.FPR) / config.hash_funs))));
-}
-
+// TODO this will miss the low level IBF of a merged bin currently!
+// But it's no bug yet as the highest record is parsed again in the create_ibfs loop below.
 auto initialise_hibf(build_config const & config, build_data const & data)
 {
     assert(data.hibf_num_technical_bins != 0);
-    std::set<size_t> kmers{};
+    std::unordered_set<size_t> kmers{};
 
     // since the packing is supposedly done with minimizers and we probably have a different setting now
     // we need to calculate the maximum bin size. Since the relative number of minimizers should always correlate
@@ -136,7 +132,7 @@ auto process_bin(build_config const & config,
         assert(batch_record.hibf_bins.size() == 1); // a merged record only corresponds to a single bin in the HIBF
         size_t const hidx = batch_record.hibf_bins[0];
 
-        std::set<size_t> kmers{};
+        std::unordered_set<size_t> kmers{};
         size_t const highest_libf_bin_idx = data.merged_max_bin_map.at(hidx);
 
         for (auto const & [combined_id, seq] : info)
@@ -174,9 +170,9 @@ auto process_bin(build_config const & config,
     }
 }
 
-auto create_ibfs(build_config const & config)
+auto create_ibfs_from_chopper_split(build_config const & config)
 {
-    auto const [data, batches] = read_traversal_file(config.traversal_filename);
+    auto const [data, batches] = read_chopper_split_file(config.chopper_split_filename);
 
     auto high_level_ibf = initialise_hibf(config, data);
 
@@ -186,7 +182,7 @@ auto create_ibfs(build_config const & config)
     std::vector<seqan3::interleaved_bloom_filter<>> low_level_ibfs(data.hibf_num_technical_bins, dummy);
 
     size_t bin_idx{};
-    // todo: leave out highest record
+    // todo: leave out highest record but fix initialise_ibf before!
     for (auto const & batch_record : batches)
     {
         if (config.verbose)

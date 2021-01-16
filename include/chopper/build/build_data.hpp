@@ -2,7 +2,7 @@
 
 #include <chopper/build/batch.hpp>
 #include <chopper/build/region.hpp>
-#include <chopper/detail_parse_binning_line.hpp>
+#include <chopper/detail_parse_chopper_pack_line.hpp>
 
 struct build_data
 {
@@ -10,7 +10,7 @@ struct build_data
     size_t num_libfs{};
     std::string hibf_max_bin_id{};
     size_t hibf_max_bin{};
-    data_file_record * hibf_max_record{nullptr};
+    chopper_pack_record * hibf_max_record{nullptr};
     batch * hibf_max_batch_record{nullptr};
 
     std::unordered_map<size_t, size_t> merged_max_bin_map{};

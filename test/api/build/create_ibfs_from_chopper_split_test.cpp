@@ -8,21 +8,21 @@
 #include <seqan3/test/tmp_filename.hpp>
 #include <seqan3/alphabet/nucleotide/dna4.hpp>
 
-#include <chopper/build/create_ibfs.hpp>
+#include <chopper/build/create_ibfs_from_chopper_split.hpp>
 
 using seqan3::operator""_dna4;
 
-TEST(create_ibfs_test, small_example)
+TEST(create_ibfs_from_chopper_split_test, small_example)
 {
     std::string input_filename1 = DATADIR"small.fa";
     std::string input_filename2 = DATADIR"small2.fa";
     seqan3::test::tmp_filename data_filename{"data.tsv"};
 
-    seqan3::test::tmp_filename traversal_filename{"small.traverse"};
+    seqan3::test::tmp_filename chopper_split_filename{"small.split"};
 
     // generate data files
     {
-        std::ofstream fout{traversal_filename.get_path()};
+        std::ofstream fout{chopper_split_filename.get_path()};
         fout << "#MERGED_BIN_6 max_bin_id:0\n"
              << "#HIGH_LEVEL_IBF max_bin_id:MERGED_BIN_6\n"
              << "#FILE_ID\tSEQ_ID\tBEGIN\tEND\tHIBF_BIN_IDX\tLIBF_BIN_IDX\n"
@@ -50,7 +50,7 @@ TEST(create_ibfs_test, small_example)
              << input_filename1 << "\tseq3\t0\t481\t6\t4\n";
     }
 
-    // The traversal file is made up like the following
+    // The chopper_split file is made up like the following
     // HIGH LEVEL IBF
     // --------------
     // Bin 0: seq1, seq2
@@ -71,9 +71,9 @@ TEST(create_ibfs_test, small_example)
 
     build_config config{};
     config.k = 15;
-    config.traversal_filename = traversal_filename.get_path().string();
+    config.chopper_split_filename = chopper_split_filename.get_path().string();
 
-    auto && [high_level_ibf/*, low_level_ibf_ids*/, low_level_ibfs] = create_ibfs(config);
+    auto && [high_level_ibf/*, low_level_ibf_ids*/, low_level_ibfs] = create_ibfs_from_chopper_split(config);
 
     EXPECT_EQ(low_level_ibfs.size(), 7u);
     for (size_t i = 0; i < low_level_ibfs.size(); ++i)
@@ -186,13 +186,13 @@ TEST(create_ibfs_test, small_example)
     }
 }
 
-TEST(create_ibfs_test, config_overlap)
+TEST(create_ibfs_from_chopper_split_test, config_overlap)
 {
     std::string input_filename1 = DATADIR"small.fa";
-    seqan3::test::tmp_filename traversal_filename{"test.traverse"};
+    seqan3::test::tmp_filename chopper_split_filename{"test.split"};
 
-    { // generate traversal file
-        std::ofstream fout{traversal_filename.get_path()};
+    { // generate chopper_split file
+        std::ofstream fout{chopper_split_filename.get_path()};
         fout << "#HIGH_LEVEL_IBF max_bin_id:SPLIT_BIN_0\n"
              << "#FILE_ID\tSEQ_ID\tBEGIN\tEND\tHIBF_BIN_IDX\tLIBF_BIN_IDX\n"
              << input_filename1 << "\tseq1\t0\t400\t0\t-\n"
@@ -201,7 +201,7 @@ TEST(create_ibfs_test, config_overlap)
              << input_filename1 << "\tseq3\t240\t481\t2\t-\n";
     }
 
-    // The traversal files are made up like the following
+    // The chopper_split files are made up like the following
     // HIGH LEVEL IBF
     // --------------
     // Bin 0: seq1, seq2
@@ -213,10 +213,10 @@ TEST(create_ibfs_test, config_overlap)
 
     auto produce_results = [&] (auto & config)
     {
-        config.traversal_filename = traversal_filename.get_path().string();
+        config.chopper_split_filename = chopper_split_filename.get_path().string();
         config.k = 15;
 
-        auto && [high_level_ibf, low_level_ibfs] = create_ibfs(config);
+        auto && [high_level_ibf, low_level_ibfs] = create_ibfs_from_chopper_split(config);
 
         EXPECT_EQ(high_level_ibf.bin_count(), 3);
         EXPECT_EQ(low_level_ibfs.size(), 3u); // but all LIBFS in list are dummys
@@ -287,12 +287,12 @@ TEST(create_ibfs_test, config_overlap)
     }
 }
 
-TEST(create_ibfs_test, high_level_size)
+TEST(create_ibfs_from_chopper_split_test, high_level_size)
 {
     std::string input_filename1 = DATADIR"small.fa";
     seqan3::test::tmp_filename data_filename{"data.tsv"};
 
-    seqan3::test::tmp_filename traversal_file{"test.traverse"};
+    seqan3::test::tmp_filename chopper_split_file{"test.split"};
 
     std::string travsersal_file_body
     {
@@ -309,43 +309,43 @@ TEST(create_ibfs_test, high_level_size)
 
     build_config config{};
     config.k = 15;
-    config.traversal_filename = traversal_file.get_path().string();
+    config.chopper_split_filename = chopper_split_file.get_path().string();
 
     { // Split bin 0 is highest record - bin 0 DOES NOT include all sequences
         {
-            std::ofstream fout{traversal_file.get_path()};
+            std::ofstream fout{chopper_split_file.get_path()};
             fout << "#MERGED_BIN_3 max_bin_id:0\n"
                  << "#HIGH_LEVEL_IBF max_bin_id:SPLIT_BIN_0\n"
                  << travsersal_file_body;
         }
 
-        auto && [high_level_ibf, low_level_ibfs] = create_ibfs(config);
+        auto && [high_level_ibf, low_level_ibfs] = create_ibfs_from_chopper_split(config);
 
         EXPECT_EQ(high_level_ibf.bin_size(), 76615);
     }
 
     { // Split bin 1 is highest record - bin 1 DOES NOT include all sequences but more that bin 0
         {
-            std::ofstream fout{traversal_file.get_path()};
+            std::ofstream fout{chopper_split_file.get_path()};
             fout << "#MERGED_BIN_3 max_bin_id:0\n"
                  << "#HIGH_LEVEL_IBF max_bin_id:SPLIT_BIN_1\n"
                  << travsersal_file_body;
         }
 
-        auto && [high_level_ibf, low_level_ibfs] = create_ibfs(config);
+        auto && [high_level_ibf, low_level_ibfs] = create_ibfs_from_chopper_split(config);
 
         EXPECT_EQ(high_level_ibf.bin_size(), 92535);
     }
 
     { // merged bin is highest record - should result in same size as split bin 1, because of the same sequence content
         {
-            std::ofstream fout{traversal_file.get_path()};
+            std::ofstream fout{chopper_split_file.get_path()};
             fout << "#MERGED_BIN_3 max_bin_id:0\n"
                  << "#HIGH_LEVEL_IBF max_bin_id:MERGED_BIN_3\n"
                  << travsersal_file_body;
         }
 
-        auto && [high_level_ibf, low_level_ibfs] = create_ibfs(config);
+        auto && [high_level_ibf, low_level_ibfs] = create_ibfs_from_chopper_split(config);
 
         EXPECT_EQ(high_level_ibf.bin_size(), 114226);
     }

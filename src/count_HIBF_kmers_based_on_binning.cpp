@@ -18,7 +18,7 @@ void initialize_argument_parser(seqan3::argument_parser & parser, cmd_arguments 
     parser.info.short_description = "Count unique kmers in bins.";
     parser.info.version = "1.0.0";
 
-    parser.add_option(args.binning_file, 'f', "files", "Give me a file.", seqan3::option_spec::REQUIRED);
+    parser.add_option(args.binning_file, 'f', "files", "Give me a file.", seqan3::option_spec::required);
     parser.add_option(args.k, 'k', "kmer-size", "The kmer to count with.");
 }
 
@@ -27,7 +27,7 @@ struct file_type_traits : public seqan3::sequence_file_input_default_traits_dna
     using sequence_alphabet = seqan3::dna4;
 };
 
-auto print_kmer_content(data_file_record const & record, size_t const num_bins, uint8_t const k)
+auto print_kmer_content(chopper_pack_record const & record, size_t const num_bins, uint8_t const k)
 {
     using seq_file_type = seqan3::sequence_file_input<file_type_traits,
                                                       seqan3::fields<seqan3::field::seq>,

@@ -15,12 +15,12 @@ TEST(chopper_split_test, simple_example)
 {
     std::string input_filename1 = DATADIR"small.fa";
     std::string input_filename2 = DATADIR"small2.fa";
-    seqan3::test::tmp_filename output_filename{"small_traverse.out"};
+    seqan3::test::tmp_filename output_filename{"small.split"};
     const char * argv[] = {"./chopper-split", "-k", "15", "-w", "25", "-b", "3",
                            "-s", input_filename1.c_str(), "-s", input_filename2.c_str(),
                            "-o", output_filename.get_path().c_str()};
     int argc = 13;
-    seqan3::argument_parser split_parser{"chopper-split", argc, argv, false};
+    seqan3::argument_parser split_parser{"chopper-split", argc, argv, seqan3::update_notifications::off};
 
     chopper_split(split_parser);
 
@@ -59,7 +59,7 @@ TEST(chopper_split_test, no_s_or_f_option)
     std::string input_filename = DATADIR"small.fa";
     const char * argv[] = {"./chopper-split", "-k", "15"};
     int argc = 3;
-    seqan3::argument_parser split_parser{"chopper-split", argc, argv, false};
+    seqan3::argument_parser split_parser{"chopper-split", argc, argv, seqan3::update_notifications::off};
 
     EXPECT_THROW(chopper_split(split_parser), std::runtime_error);
 }
@@ -76,18 +76,18 @@ TEST(chopper_split_test, data_file_as_input)
              << "SPLIT_BIN_0\t" << input_filename1 + "\t2\t500\n"
              << "SPLIT_BIN_2\t" << input_filename1 + "\t2\t500\n"
              << "MERGED_BIN_4_0\t" << input_filename1 << "\t2\t2500\n"
-             << "MERGED_BIN_4_1\t" << input_filename1 << ";" << input_filename2 << "\t2\t2500\n"
-             << "MERGED_BIN_4_2\t" << input_filename1 << "\t1\t500\n"
+             << "MERGED_BIN_4_2\t" << input_filename1 << ";" << input_filename2 << "\t2\t2500\n"
+             << "MERGED_BIN_4_4\t" << input_filename1 << "\t1\t500\n"
              << "SPLIT_BIN_5\t" << input_filename2 + "\t3\t1000\n";
     }
 
-    seqan3::test::tmp_filename output_filename{"traverse"};
+    seqan3::test::tmp_filename output_filename{"small.split"};
 
     const char * argv[] = {"./chopper-split", "-k", "15", "-w", "25",
                            "-f", data_filename.get_path().c_str(),
                            "-o", output_filename.get_path().c_str()};
     int argc = 9;
-    seqan3::argument_parser split_parser{"chopper-split", argc, argv, false};
+    seqan3::argument_parser split_parser{"chopper-split", argc, argv, seqan3::update_notifications::off};
 
     EXPECT_EQ(chopper_split(split_parser), 0);
 
@@ -164,12 +164,12 @@ TEST(chopper_split_test, big_fat_nodes)
              << "ACTGATCAGGGAGCTAGCAGGCAGGCAGCAGCTAGCGAGCGATCGAGCATCGAGCATCGAGCGATCGACGATCGACTAGC\n";
     }
 
-    seqan3::test::tmp_filename output_filename{"small_traverse.out"};
+    seqan3::test::tmp_filename output_filename{"small.split"};
     const char * argv[] = {"./chopper-split", "-k", "5", "-w", "7", "-b", "5",
                            "-s", seq_file.get_path().c_str(),
                            "-o", output_filename.get_path().c_str()};
     int argc = 11;
-    seqan3::argument_parser split_parser{"chopper-split", argc, argv, false};
+    seqan3::argument_parser split_parser{"chopper-split", argc, argv, seqan3::update_notifications::off};
 
     chopper_split(split_parser);
 

@@ -10,6 +10,18 @@ declare_datasource (FILE small.fa
                     URL ${CMAKE_SOURCE_DIR}/test/data/small.fa
                     URL_HASH SHA256=215a646ccd2d156eeabdd792108fc0ba385e244a25218afc095658189d2a3c0d)
 
+declare_datasource (FILE seq1.fa
+                    URL ${CMAKE_SOURCE_DIR}/test/data/seq1.fa
+                    URL_HASH SHA256=f60b985d9f3be1d3dd6105d62f4321eeb617bc52f4fb0435b016bf1873aa2eac)
+
+declare_datasource (FILE seq2.fa
+                    URL ${CMAKE_SOURCE_DIR}/test/data/seq2.fa
+                    URL_HASH SHA256=4153dfac5993b6ddeebf76fabeaaaad838b68f4abe0c3c03cc95b9196832af7a)
+
+declare_datasource (FILE seq3.fa
+                    URL ${CMAKE_SOURCE_DIR}/test/data/seq3.fa
+                    URL_HASH SHA256=aa440a61539216096680e53a1d68b245e5a7cac67e7eca315996d51b863d9915)
+
 declare_datasource (FILE small2.fa
                     URL ${CMAKE_SOURCE_DIR}/test/data/small2.fa
                     URL_HASH SHA256=3a444c41f71586d62514eea8faf3c699ac5f2cfce94fd3fc7c3e47d3ff3a8383)
@@ -30,6 +42,6 @@ declare_datasource (FILE seqinfo.tsv
                     URL ${CMAKE_SOURCE_DIR}/test/data/seqinfo.tsv
                     URL_HASH SHA256=c6e28cc4ebf4902c41b1c237b1410665994e0fd0b8d8473c38a8107041d78172)
 
-declare_datasource (FILE traversal.out
-                    URL ${CMAKE_SOURCE_DIR}/test/data/traversal.out
-                    URL_HASH SHA256=508f08905e2844f3cdfbad4d12488a474a24fa40e1da7c51025561fca821f07b)
+declare_datasource (FILE small.split
+                    URL ${CMAKE_SOURCE_DIR}/test/data/small.split
+                    URL_HASH SHA256=fc3530f517a354f940c4eb4ac1575354bbcde52a4257061ee2370b5a2c3b5c8b)

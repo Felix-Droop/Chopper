@@ -10,20 +10,20 @@
 #include <chopper/build/build_config.hpp>
 #include <chopper/build/build_data.hpp>
 #include <chopper/detail_bin_prefixes.hpp>
-#include <chopper/detail_parse_binning_line.hpp>
+#include <chopper/detail_parse_chopper_pack_line.hpp>
 #include <chopper/detail_starts_with.hpp>
 
 auto read_data_file_and_set_high_level_bins(build_config const & config)
 {
     build_data header;
-    std::vector<data_file_record> records{};
+    std::vector<chopper_pack_record> records{};
 
-    std::unordered_map<std::string, data_file_record> low_level_records{};
+    std::unordered_map<std::string, chopper_pack_record> low_level_records{};
 
     std::ifstream binning_file{config.binning_filename};
 
     if (!binning_file.good() || !binning_file.is_open())
-        throw std::logic_error{"Could not open file for reading"};
+        throw std::logic_error{"Could not open file " + config.binning_filename + " for reading"};
 
     std::string current_line;
     while (std::getline(binning_file, current_line) && current_line[0] == '#')
@@ -52,7 +52,7 @@ auto read_data_file_and_set_high_level_bins(build_config const & config)
     size_t record_idx{};
     do
     {
-        auto && record = parse_binning_line(current_line);
+        auto && record = parse_chopper_pack_line(current_line);
 
         if (starts_with(record.bin_name, merged_bin_prefix))
         {
