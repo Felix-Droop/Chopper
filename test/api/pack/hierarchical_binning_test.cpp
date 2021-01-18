@@ -11,15 +11,18 @@
 
 TEST(hierarchical_binning_test, small_example)
 {
-    std::vector<std::string> seq_ids{"seq0", "seq1", "seq2", "seq3", "seq4", "seq5", "seq6",  "seq7"};
-    std::vector<size_t> counts{500, 1000, 500, 500, 500, 500, 500, 500};
-    seqan3::test::tmp_filename output_filename{"output.binning"};
-
     pack_config config;
     config.bins = 4;
-    config.output_filename = output_filename.get_path();
 
-    hierarchical_binning algo{seq_ids, counts, config};
+    std::stringstream output_buffer;
+    std::stringstream header_buffer;
+    pack_data data;
+    data.output_buffer = &output_buffer;
+    data.header_buffer = &header_buffer;
+    data.filenames = {"seq0", "seq1", "seq2", "seq3", "seq4", "seq5", "seq6",  "seq7"};
+    data.kmer_counts = {500, 1000, 500, 500, 500, 500, 500, 500};
+
+    hierarchical_binning algo{data, config};
     algo.execute();
 
     std::string expected_file
@@ -37,23 +40,23 @@ TEST(hierarchical_binning_test, small_example)
         "SPLIT_BIN_3\tseq1\t1\t1000\n"
     };
 
-    // high level ibf file:
-    std::ifstream output_file{output_filename.get_path()};
-    std::string output_file_str((std::istreambuf_iterator<char>(output_file)), std::istreambuf_iterator<char>());
-    EXPECT_EQ(output_file_str, expected_file);
+    EXPECT_EQ(header_buffer.str() + output_buffer.str(), expected_file);
 }
 
 TEST(hierarchical_binning_test, another_example)
 {
-    std::vector<std::string> seq_ids{"seq0", "seq1", "seq2", "seq3", "seq4", "seq5", "seq6",  "seq7"};
-    std::vector<size_t> counts{50, 1000, 1000, 50, 5, 10, 10, 5};
-    seqan3::test::tmp_filename output_filename{"output.binning"};
-
     pack_config config;
     config.bins = 5;
-    config.output_filename = output_filename.get_path();
 
-    hierarchical_binning algo{seq_ids, counts, config};
+    std::stringstream output_buffer;
+    std::stringstream header_buffer;
+    pack_data data;
+    data.output_buffer = &output_buffer;
+    data.header_buffer = &header_buffer;
+    data.filenames = {"seq0", "seq1", "seq2", "seq3", "seq4", "seq5", "seq6",  "seq7"};
+    data.kmer_counts = {50, 1000, 1000, 50, 5, 10, 10, 5};
+
+    hierarchical_binning algo{data, config};
     algo.execute();
 
     std::string expected_file
@@ -71,24 +74,24 @@ TEST(hierarchical_binning_test, another_example)
         "SPLIT_BIN_3\tseq1\t2\t500\n"
     };
 
-    // high level ibf file:
-    std::ifstream output_file{output_filename.get_path()};
-    std::string output_file_str((std::istreambuf_iterator<char>(output_file)), std::istreambuf_iterator<char>());
-    EXPECT_EQ(output_file_str, expected_file);
+    EXPECT_EQ(header_buffer.str() + output_buffer.str(), expected_file);
 }
 
 TEST(hierarchical_binning_test, knuts_example)
 {
-    std::vector<std::string> seq_ids{"seq0", "seq1", "seq2", "seq3", "seq4"};
-    std::vector<size_t> counts{60, 600, 1000, 800, 800};
-    seqan3::test::tmp_filename output_filename{"output.binning"};
-
     pack_config config;
     config.alpha = 1;
     config.bins = 5;
-    config.output_filename = output_filename.get_path();
 
-    hierarchical_binning algo{seq_ids, counts, config};
+    std::stringstream output_buffer;
+    std::stringstream header_buffer;
+    pack_data data;
+    data.output_buffer = &output_buffer;
+    data.header_buffer = &header_buffer;
+    data.filenames = {"seq0", "seq1", "seq2", "seq3", "seq4"};
+    data.kmer_counts = {60, 600, 1000, 800, 800};
+
+    hierarchical_binning algo{data, config};
     algo.execute();
 
     std::string expected_file
@@ -103,8 +106,5 @@ TEST(hierarchical_binning_test, knuts_example)
         "SPLIT_BIN_3\tseq2\t2\t500\n"
     };
 
-    // high level ibf file:
-    std::ifstream output_file{output_filename.get_path()};
-    std::string output_file_str((std::istreambuf_iterator<char>(output_file)), std::istreambuf_iterator<char>());
-    EXPECT_EQ(output_file_str, expected_file);
+    EXPECT_EQ(header_buffer.str() + output_buffer.str(), expected_file);
 }

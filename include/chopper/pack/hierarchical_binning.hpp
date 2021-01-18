@@ -13,6 +13,7 @@
 
 #include <chopper/detail_bin_prefixes.hpp>
 #include <chopper/pack/pack_config.hpp>
+#include <chopper/pack/pack_data.hpp>
 #include <chopper/pack/print_matrix.hpp>
 #include <chopper/pack/simple_binning.hpp>
 #include <chopper/union/union_estimate.hpp>
@@ -49,28 +50,25 @@ private:
     //!\brief Whether to do a second sorting of the bins which takes into account similarity or not.
     bool const resort_bins_wanted;
 
-    //!\brief The output stream to cache the results to.
-    std::stringstream output_buff;
-    //!\brief The stream to cache the header to.
-    std::stringstream header_buff;
-    //!\brief The filename to write the output to.
-    std::string output_filename;
+    //!\brief A reference to the output stream to cache the results to.
+    std::stringstream & output_buff;
+    //!\brief A reference to the stream to cache the header to.
+    std::stringstream & header_buff;
 
 public:
     /*!\brief The constructor from user bin names, their kmer counts and a configuration.
-     * \param[in, out] names_ The filenames associated with the user bin.
-     * \param[in, out] input  The kmer counts associated with the user bin.
+     * \param[in, out] data The data input: filenames associated with the user bin and a kmer count per user bin.
      * \param[in] config A configuration object that holds information from the user that influence the computation.
      *
      *
      * Each entry in the names_ and input vector respectively is considered a user bin (both vectors must have the
      * same length).
      */
-    hierarchical_binning(std::vector<std::string> & names_, std::vector<size_t> & input, pack_config const & config) :
-        names{names_},
-        user_bin_kmer_counts{input},
+    hierarchical_binning(pack_data & data, pack_config const & config) :
+        names{data.filenames},
+        user_bin_kmer_counts{data.kmer_counts},
         alpha{config.alpha},
-        num_user_bins{input.size()},
+        num_user_bins{data.kmer_counts.size()},
         num_technical_bins{(config.bins == 0) ? ((user_bin_kmer_counts.size() + 63) / 64 * 64) : config.bins},
         kmer_count_sum{std::accumulate(user_bin_kmer_counts.begin(), user_bin_kmer_counts.end(), 0u)},
         kmer_count_average_per_bin{std::max<size_t>(1u, kmer_count_sum / num_technical_bins)},
@@ -78,10 +76,11 @@ public:
         sketch_bits{config.sketch_bits},
         union_estimate_wanted{config.union_estimate},
         resort_bins_wanted{config.resort_bins},
-        output_filename{config.output_filename}
+        output_buff{*data.output_buffer},
+        header_buff{*data.header_buffer}
     {
         std::cout << "#Techincal bins: " << num_technical_bins << std::endl;
-        std::cout << "#User bins: " << input.size() << std::endl;
+        std::cout << "#User bins: " << data.kmer_counts.size() << std::endl;
         std::cout << "Output file: " << config.output_filename.string() << std::endl;
 
         if (names.size() != user_bin_kmer_counts.size())
@@ -127,8 +126,6 @@ public:
         // print_matrix(trace, num_technical_bins, num_user_bins, std::make_pair(std::numeric_limits<size_t>::max(), std::numeric_limits<size_t>::max()));
 
         backtracking(matrix, ll_matrix, trace);
-
-        write_result_file();
     }
 
 private:
@@ -378,7 +375,14 @@ private:
 
                 // now do the binning for the low-level IBF:
                 std::string const merged_ibf_name{std::string{merged_bin_prefix} + "_" + std::to_string(bin_id)};
-                simple_binning algo{merged_bins, merged_bin_names, merged_ibf_name, output_buff};
+
+                pack_data libf_data{};
+                libf_data.filenames = std::move(merged_bin_names);
+                libf_data.kmer_counts = std::move(merged_bins);
+                libf_data.output_buffer = &output_buff;
+                libf_data.header_buffer = &header_buff;
+
+                simple_binning algo{libf_data, merged_ibf_name};
                 auto max_bin_id = algo.execute();
                 header_buff << "#" << merged_ibf_name << " max_bin_id:" << max_bin_id << '\n';
 
@@ -410,7 +414,14 @@ private:
 
                 // now do the binning for the low-level IBF:
                 std::string const merged_ibf_name{std::string{merged_bin_prefix} + "_" + std::to_string(bin_id)};
-                simple_binning algo{merged_bins, merged_bin_names, merged_ibf_name, output_buff};
+
+                pack_data libf_data{};
+                libf_data.filenames = std::move(merged_bin_names);
+                libf_data.kmer_counts = std::move(merged_bins);
+                libf_data.output_buffer = &output_buff;
+                libf_data.header_buffer = &header_buff;
+
+                simple_binning algo{libf_data, merged_ibf_name};
                 auto max_bin_id = algo.execute();
                 header_buff << "#" << merged_ibf_name << " max_bin_id:" << max_bin_id << '\n';
 
@@ -446,13 +457,5 @@ private:
         }
 
         header_buff << "#" << hibf_prefix << " max_bin_id:" << high_level_max_id << '\n';
-    }
-
-    //!\brief Write the output to the result file.
-    void write_result_file()
-    {
-        std::ofstream fout{output_filename};
-        fout << header_buff.rdbuf();
-        fout << output_buff.rdbuf();
     }
 };
