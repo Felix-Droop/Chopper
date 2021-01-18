@@ -167,7 +167,7 @@ public:
 
 private:
     /*!\brief Perform an agglomerative clustering variant on the index range [first:last)
-     * \param[in] start
+     * \param[in] first
      * \param[in] last
      * \param[out] permutation append the new order to this
      */

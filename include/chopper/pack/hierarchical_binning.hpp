@@ -15,7 +15,7 @@
 #include <chopper/pack/pack_config.hpp>
 #include <chopper/pack/print_matrix.hpp>
 #include <chopper/pack/simple_binning.hpp>
-#include <chopper/union/estimate_unions_hll.hpp>
+#include <chopper/union/union_estimate.hpp>
 
 struct hierarchical_binning
 {
