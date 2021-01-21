@@ -268,7 +268,8 @@ private:
                 {
                     // if we use the union estimate we plug in that value instead of the sum (weight)
                     // union_estimate[i][j] is the union of {i, ..., i+j}
-                    return union_estimate_wanted ? union_estimates[j_prime][j - j_prime] : weight;
+                    // the + 1 is necessary because j_prime is decremented directly after weight is updated
+                    return union_estimate_wanted ? union_estimates[j_prime + 1][j - (j_prime + 1)] : weight;
                 };
 
                 // if the user bin j-1 was not split into multiple technical bins!
