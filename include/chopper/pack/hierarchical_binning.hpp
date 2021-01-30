@@ -45,6 +45,8 @@ private:
     uint8_t const kmer_size;
     //!\brief The number of bits the HyperLogLog sketch should use to distribute the values into bins.
     uint8_t const sketch_bits;
+    //!\brief The number of threads for building the hlls.
+    size_t const num_threads;
     //!\brief Whether to estimate the union of kmer sets to possibly improve the binning or not.
     bool const union_estimate_wanted;
     //!\brief Whether to do a second sorting of the bins which takes into account similarity or not.
@@ -74,6 +76,7 @@ public:
         kmer_count_average_per_bin{std::max<size_t>(1u, kmer_count_sum / num_technical_bins)},
         kmer_size{config.k},
         sketch_bits{config.sketch_bits},
+        num_threads{config.num_threads},
         union_estimate_wanted{config.union_estimate},
         resort_bins_wanted{config.resort_bins},
         output_buff{*data.output_buffer},
@@ -98,7 +101,7 @@ public:
 
         if (union_estimate_wanted)
         {
-            estimator.build_hlls();
+            estimator.build_hlls(num_threads);
 
             if (resort_bins_wanted) estimator.resort_bins();
             

@@ -5,6 +5,7 @@
 #include <functional>
 
 #include <seqan3/io/sequence_file/input.hpp>
+#include <seqan3/range/views/zip.hpp>
 
 #include <chopper/union/hyperloglog.hpp>
 
@@ -42,10 +43,10 @@ private:
     std::vector<hll::HyperLogLog> hlls;
 
     //!\brief The number of bits the HyperLogLog sketch should use to distribute the values into bins.
-    uint8_t sketch_bits;
+    uint8_t const sketch_bits;
 
     //!\brief The k of the k-mers.
-    size_t kmer_size;
+    size_t const kmer_size;
 
     //!\brief Whether build_hlls() has been called
     bool built_hlls;
@@ -63,38 +64,59 @@ public:
                    uint8_t sketch_bits_) :
         names{names_},
         user_bin_kmer_counts{user_bin_kmer_counts_},
-        hlls{},
+        hlls(names.size(), hll::HyperLogLog(sketch_bits_)),
         sketch_bits{sketch_bits_},
         kmer_size{kmer_size_},
         built_hlls{false}
     {
     }
 
-    //!\brief Construct HyperLogLog sketches from the sequences given by the member names
-    void build_hlls()
+    /*!\brief Construct HyperLogLog sketches from the sequences given by the member names
+     * \param[in] num_threads number of threads to use
+     */
+    void build_hlls(size_t num_threads)
     {
+        if (built_hlls) return; 
+
         using sequence_file_type = seqan3::sequence_file_input<input_traits, seqan3::fields<seqan3::field::seq>>;
 
-        // build hll sketches from the sequences of all files
-        for (auto && filename : names)
+        // setup async execution
+        auto filenames = seqan3::views::zip(names, std::views::iota(0u, names.size()))
+                       | seqan3::views::async_input_buffer(num_threads);
+
+        auto worker = [&filenames, this] ()
         {
-            sequence_file_type seq_file{filename};
-            hll::HyperLogLog & curr_hll = hlls.emplace_back(sketch_bits);
-
-            // put every sequence in this file into the sketch
-            for (auto && [seq] : seq_file)
+            // build hll sketches from the sequences of all files
+            for (auto && [filename, hll_index] : filenames)
             {
-                // we have to go C-style here for the HyperLogLog Interface
-                char* c_seq_it = &*seq.begin();
-                char* end = c_seq_it + seq.size();
+                sequence_file_type seq_file{filename};
+                hll::HyperLogLog & curr_hll = hlls[hll_index];
 
-                while(c_seq_it + kmer_size <= end)
+                // put every sequence in this file into the sketch
+                for (auto && [seq] : seq_file)
                 {
-                    curr_hll.add(c_seq_it, kmer_size);
-                    ++c_seq_it;
+                    // we have to go C-style here for the HyperLogLog Interface
+                    char* c_seq_it = &*seq.begin();
+                    char* end = c_seq_it + seq.size();
+
+                    while(c_seq_it + kmer_size <= end)
+                    {
+                        curr_hll.add(c_seq_it, kmer_size);
+                        ++c_seq_it;
+                    }
                 }
             }
-        }
+        };
+
+        // launch threads with worker
+        std::vector<decltype(std::async(std::launch::async, worker))> handles;
+
+        for (size_t i = 0; i < num_threads; ++i)
+            handles.emplace_back(std::async(std::launch::async, worker));
+
+        // wait for all threads to finish
+        for (auto && handle : handles)
+            handle.wait();
 
         built_hlls = true;
     }
@@ -102,24 +124,25 @@ public:
     //!\brief Reorder names, user_bin_kmer_counts and hlls such that similar bins are close to each other
     void resort_bins()
     {
-        std::vector<size_t> permutation;
+        if (!built_hlls) throw std::runtime_error{"Must build hlls first."};
 
-        // TODO do some small overlap, e.g. the last cluster from before
+        std::vector<size_t> permutation;
+        double const max_ratio = 0.5;
 
         size_t first = 0;
         size_t last = 1;
-        double const max_ratio = 0.5;
         while(first < names.size())
         {
             // size difference is too large or sequence is over -> do the clustering
             if (user_bin_kmer_counts[first] * max_ratio > user_bin_kmer_counts[last] || last == names.size())
             {
+                // if this is not the first group, we want one bin overlap
                 cluster_bins(permutation, first, last);
                 first = last;
             }
             ++last;
         }
-
+    
         // apply permutation to names, user_bin_kmar_counts and hlls
         for (size_t i = 0; i < permutation.size(); ++i)
         {
@@ -186,7 +209,6 @@ private:
             }
         };
 
-        // (possible improvement: these two could be just std::vectors with an index shift by 'start')
         std::unordered_map<size_t, node> clustering;
         std::unordered_map<size_t, double> estimates;
 
@@ -201,6 +223,15 @@ private:
         {
             clustering[i] = {none, none, hlls[i]};
             estimates[i] = hlls[i].estimate();
+        }
+
+        // if this is not the first group, we want to have one overlapping bin
+        size_t previous_rightmost = none;
+        if (first != 0)
+        {
+            previous_rightmost = permutation.back();
+            clustering[previous_rightmost] = {none, none, hlls[previous_rightmost]};
+            estimates[previous_rightmost] = hlls[previous_rightmost].estimate();
         }
 
         // initialize dist
@@ -284,27 +315,73 @@ private:
             ++id;
         }
 
-        // traceback into permutation
         size_t final_root = dist.begin()->first;
-        trace(clustering, permutation, final_root);
+
+        // rotate the previous rightmost to the left so that it has the correct place in the permutation
+        if (first != 0)
+        {
+            rotate(clustering, previous_rightmost,final_root);
+        }
+
+        // traceback into permutation and ignore the previous rightmost
+        trace(clustering, permutation, final_root, previous_rightmost);
+    }
+
+    /*!\brief Rotate the previous rightmost bin to the left of the clustering tree
+     * \param[in, out] clustering the tree to do the rotation on
+     * \param[in] previous_rightmost the id of the node to be rotated to the left
+     * \param[in] id the id of the current node
+     * 
+     * \return whether previous rightmost was in the subtree rooted at id
+     */
+    bool rotate(std::unordered_map<size_t, node> & clustering,
+                size_t const previous_rightmost,
+                size_t const id)
+    {
+        if (id == previous_rightmost) return true;
+        
+        node & curr = clustering.at(id);
+        if (curr.left == std::numeric_limits<size_t>::max())
+        {
+            return false;
+        }
+
+        // nothing to do if previous_rightmost is in the left subtree
+        if(rotate(clustering, previous_rightmost, curr.left)) return true;
+        
+        // rotate if previous_rightmost is in the right subtree
+        if(rotate(clustering, previous_rightmost, curr.right))
+        {
+            size_t const temp = curr.right;
+            curr.right = curr.left;
+            curr.left = temp;
+            return true; 
+        }
+
+        // previous_rightmost is not in this subtree
+        return false;
     }
 
     /*!\brief Do a recursive traceback to find the order of leaves in the clustering tree 
      * \param[in] clustering the tree to do the traceback on
      * \param[out] permutation append the new order to this
      * \param[in] id the id of the current node
+     * \param[in] previous_rightmost the id of the node on the left which should be ignored
      */
     void trace(std::unordered_map<size_t, node> const & clustering,
                std::vector<size_t> & permutation,
-               size_t id)
+               size_t const id,
+               size_t const previous_rightmost)
     {
-        if (clustering.at(id).left == std::numeric_limits<size_t>::max())
+        node const & curr = clustering.at(id);
+        
+        if (curr.left == std::numeric_limits<size_t>::max())
         {
-            permutation.push_back(id);
+            if (id != previous_rightmost) permutation.push_back(id);
             return;
         }
 
-        trace(clustering, permutation, clustering.at(id).left);
-        trace(clustering, permutation, clustering.at(id).right);
+        trace(clustering, permutation, curr.left, previous_rightmost);
+        trace(clustering, permutation, curr.right, previous_rightmost);
     }
 };
