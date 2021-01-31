@@ -61,6 +61,7 @@ int main(int const argc, char const ** argv)
     }
 
     build_config config;
+    config.k = args.k;
     config.binning_filename = args.binning_file;
     auto [header, records] = read_data_file_and_set_high_level_bins(config);
 
