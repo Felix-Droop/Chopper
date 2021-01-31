@@ -3,9 +3,11 @@
 #include <unordered_map>
 #include <queue>
 #include <functional>
+#include <future>
 
 #include <seqan3/io/sequence_file/input.hpp>
 #include <seqan3/range/views/zip.hpp>
+#include <seqan3/range/views/async_input_buffer.hpp>
 
 #include <chopper/union/hyperloglog.hpp>
 
