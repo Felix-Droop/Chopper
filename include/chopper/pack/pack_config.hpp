@@ -2,6 +2,8 @@
 
 #include <seqan3/std/filesystem>
 
+#include <thread>
+
 struct pack_config
 {
     std::filesystem::path data_file;
