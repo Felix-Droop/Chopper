@@ -127,21 +127,6 @@ public:
             handle.wait();
 
         built_hlls = true;
-
-        // sanity check
-        for (size_t i = 0; i < hlls.size(); i++)
-        {
-            double const hll_estimate = hlls[i].estimate();
-            double const exact = static_cast<double>(user_bin_kmer_counts[i]);
-            double const rel_err = std::abs(1.0 - hll_estimate / exact);
-            // the expected relativ error for sketch_bits = 12 is 0.02
-            if (rel_err > 0.0625)
-            {
-                seqan3::debug_stream << "Problem with building hlls. Relative Error: " << rel_err << '\n';
-                exit(1);
-            }
-        }
-        
     }
 
     //!\brief Reorder names, user_bin_kmer_counts and hlls such that similar bins are close to each other
