@@ -199,7 +199,7 @@ public:
 
                 // temp
                 sum += user_bin_kmer_counts[j];
-                if (sum < static_cast<size_t>(hlls[i].estimate()))
+                if (sum * 2 < static_cast<size_t>(hlls[i].estimate()))
                 {
                     seqan3::debug_stream << "Estimate larger than sum." << std::endl;
                     exit(1);
