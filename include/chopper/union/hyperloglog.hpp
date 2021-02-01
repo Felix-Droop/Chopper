@@ -17,6 +17,7 @@
 #include <stdexcept>
 #include <algorithm>
 #include "murmur3.h"
+#include <iostream> 
 
 #define HLL_HASH_SEED 313
 
@@ -128,8 +129,11 @@ public:
             if (zeros != 0) {
                 estimate = m_ * std::log(static_cast<double>(m_)/ zeros);
             }
-        } else if (estimate > (1.0 / 30.0) * pow_2_32) {
+        } else if (estimate > (1.0 / 30.0) * pow_2_32) 
+        {
             estimate = neg_pow_2_32 * log(1.0 - (estimate / pow_2_32));
+            std::cerr << "Too large HLL. Estimate: " << estimate << std::endl;
+            exit(1);
         }
         return estimate;
     }

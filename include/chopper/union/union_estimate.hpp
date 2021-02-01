@@ -4,6 +4,7 @@
 #include <queue>
 #include <functional>
 #include <future>
+#include <cmath>
 
 #include <seqan3/io/sequence_file/input.hpp>
 #include <seqan3/range/views/zip.hpp>
@@ -53,6 +54,9 @@ private:
     //!\brief Whether build_hlls() has been called
     bool built_hlls;
 
+    //!\brief Whether the hlls sketched have been invalidated
+    bool invalidated;
+
 public:
     /*!\brief Constructor of the union_estimate that supplies it with all the important data
      * \param[in] names names of the sequence files
@@ -69,7 +73,8 @@ public:
         hlls(names.size(), hll::HyperLogLog(sketch_bits_)),
         sketch_bits{sketch_bits_},
         kmer_size{kmer_size_},
-        built_hlls{false}
+        built_hlls{false},
+        invalidated{false}
     {
     }
 
@@ -78,6 +83,7 @@ public:
      */
     void build_hlls(size_t num_threads)
     {
+        if (invalidated) throw std::runtime_error{"Can only use this instance once."};
         if (built_hlls) return; 
 
         using sequence_file_type = seqan3::sequence_file_input<input_traits, seqan3::fields<seqan3::field::seq>>;
@@ -121,11 +127,27 @@ public:
             handle.wait();
 
         built_hlls = true;
+
+        // sanity check
+        for (size_t i = 0; i < hlls.size(); i++)
+        {
+            double const hll_estimate = hlls[i].estimate();
+            double const exact = static_cast<double>(user_bin_kmer_counts[i]);
+            double const rel_err = std::abs(1.0 - hll_estimate / exact);
+            // the expected relativ error for sketch_bits = 12 is 0.02
+            if (rel_err > 0.0625)
+            {
+                seqan3::debug_stream << "Problem with building hlls. Relative Error: " << rel_err << '\n';
+                exit(1);
+            }
+        }
+        
     }
 
     //!\brief Reorder names, user_bin_kmer_counts and hlls such that similar bins are close to each other
     void resort_bins()
     {
+        if (invalidated) throw std::runtime_error{"Can only use this instance once."};
         if (!built_hlls) throw std::runtime_error{"Must build hlls first."};
 
         std::vector<size_t> permutation;
@@ -167,27 +189,42 @@ public:
      */
     void estimate_unions(std::vector<std::vector<size_t>> & union_estimates)
     {
+        if (invalidated) throw std::runtime_error{"Can only use this instance once."};
         if (!built_hlls) throw std::runtime_error{"Must build hlls first."};
 
         // union_estimates[i][j] will be the union of the interval i, ..., i+j
         union_estimates.clear();
         size_t const n = user_bin_kmer_counts.size();
-
+        // temp
+        size_t sum = 0;
+        
         for (size_t i = 0; i < n; ++i)
         {
             std::vector<size_t> & curr_vec = union_estimates.emplace_back();
 
             // for the single set we have the exact value - no need for the hll estimate here
             curr_vec.push_back(user_bin_kmer_counts[i]);
+            // temp
+            sum = user_bin_kmer_counts[i];
 
             for (size_t j = i + 1; j < n; ++j)
             {
                 // merge next sketch into the current union
                 hlls[i].merge(hlls[j]);
 
+                // temp
+                sum += user_bin_kmer_counts[j];
+                if (sum < static_cast<size_t>(hlls[i].estimate()))
+                {
+                    seqan3::debug_stream << "Estimate larger than sum." << std::endl;
+                    exit(1);
+                }
+
                 curr_vec.push_back(static_cast<size_t>(hlls[i].estimate()));
             }
         }
+
+        invalidated = true;
     }
 
 private:
