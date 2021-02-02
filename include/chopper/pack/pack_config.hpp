@@ -10,6 +10,7 @@ struct pack_config
     std::filesystem::path output_filename{"binning.out"};
     uint16_t bins{64};
     uint8_t k{25};
+    std::filesystem::path hll_cache_dir{};
     uint8_t sketch_bits{12};
     size_t num_threads{std::thread::hardware_concurrency()};
     double alpha{10};

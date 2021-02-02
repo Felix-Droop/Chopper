@@ -10,6 +10,7 @@
 
 #include <seqan3/range/views/to.hpp>
 #include <seqan3/core/debug_stream.hpp>
+#include <seqan3/std/filesystem>
 
 #include <chopper/detail_bin_prefixes.hpp>
 #include <chopper/pack/pack_config.hpp>
@@ -43,6 +44,8 @@ private:
 
     //!\brief The k of the k-mers.
     uint8_t const kmer_size;
+    //!\brief If given, the hll sketches are dumped to this directory and restored when they already exist.
+    std::filesystem::path hll_cache_dir{};
     //!\brief The number of bits the HyperLogLog sketch should use to distribute the values into bins.
     uint8_t const sketch_bits;
     //!\brief The number of threads for building the hlls.
@@ -75,6 +78,7 @@ public:
         kmer_count_sum{std::accumulate(user_bin_kmer_counts.begin(), user_bin_kmer_counts.end(), 0u)},
         kmer_count_average_per_bin{std::max<size_t>(1u, kmer_count_sum / num_technical_bins)},
         kmer_size{config.k},
+        hll_cache_dir{config.hll_cache_dir},
         sketch_bits{config.sketch_bits},
         num_threads{config.num_threads},
         union_estimate_wanted{config.union_estimate},
@@ -101,7 +105,7 @@ public:
 
         if (union_estimate_wanted)
         {
-            estimator.build_hlls(num_threads);
+            estimator.build_hlls(num_threads, hll_cache_dir);
 
             if (resort_bins_wanted) estimator.resort_bins();
             

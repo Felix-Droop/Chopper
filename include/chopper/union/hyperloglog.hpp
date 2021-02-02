@@ -132,8 +132,6 @@ public:
         } else if (estimate > (1.0 / 30.0) * pow_2_32) 
         {
             estimate = neg_pow_2_32 * log(1.0 - (estimate / pow_2_32));
-            std::cerr << "Too large HLL. Estimate: " << estimate << std::endl;
-            exit(1);
         }
         return estimate;
     }

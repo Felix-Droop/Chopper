@@ -5,10 +5,12 @@
 #include <functional>
 #include <future>
 #include <cmath>
+#include <fstream>
 
 #include <seqan3/io/sequence_file/input.hpp>
 #include <seqan3/range/views/zip.hpp>
 #include <seqan3/range/views/async_input_buffer.hpp>
+#include <seqan3/std/filesystem>
 
 #include <chopper/union/hyperloglog.hpp>
 
@@ -81,10 +83,21 @@ public:
     /*!\brief Construct HyperLogLog sketches from the sequences given by the member names
      * \param[in] num_threads number of threads to use
      */
-    void build_hlls(size_t num_threads)
+    void build_hlls(size_t num_threads, std::filesystem::path const & hll_cache_dir)
     {
         if (invalidated) throw std::runtime_error{"Can only use this instance once."};
         if (built_hlls) return; 
+
+        // check for cached hlls
+        if (!hll_cache_dir.empty())
+        {
+            // true, if the hlls could be restored
+            if (restore_hlls(hll_cache_dir))
+            {
+                built_hlls = true;
+                return;
+            }
+        }
 
         using sequence_file_type = seqan3::sequence_file_input<input_traits, seqan3::fields<seqan3::field::seq>>;
 
@@ -125,6 +138,12 @@ public:
         // wait for all threads to finish
         for (auto && handle : handles)
             handle.wait();
+
+        // check for cached hlls
+        if (!hll_cache_dir.empty())
+        {
+            dump_hlls(hll_cache_dir);
+        }
 
         built_hlls = true;
     }
@@ -180,32 +199,32 @@ public:
         // union_estimates[i][j] will be the union of the interval i, ..., i+j
         union_estimates.clear();
         size_t const n = user_bin_kmer_counts.size();
-        // temp
-        size_t sum = 0;
         
+        size_t sum = 0;
+        size_t const two_to_31 = 1u << 31;
+
         for (size_t i = 0; i < n; ++i)
         {
             std::vector<size_t> & curr_vec = union_estimates.emplace_back();
 
             // for the single set we have the exact value - no need for the hll estimate here
             curr_vec.push_back(user_bin_kmer_counts[i]);
-            // temp
             sum = user_bin_kmer_counts[i];
 
             for (size_t j = i + 1; j < n; ++j)
             {
                 // merge next sketch into the current union
                 hlls[i].merge(hlls[j]);
-
-                // temp
+                // sum as upper bound
                 sum += user_bin_kmer_counts[j];
-                if (sum * 2 < static_cast<size_t>(hlls[i].estimate()))
-                {
-                    seqan3::debug_stream << "Estimate larger than sum." << std::endl;
-                    exit(1);
-                }
 
-                curr_vec.push_back(static_cast<size_t>(hlls[i].estimate()));
+                size_t estimate = static_cast<size_t>(hlls[i].estimate());
+
+                // if the estimate is larger than the sum, use the sum instead
+                // if it is larger than 2^31, it is inaccurate. Use the sum instead
+                if (sum < estimate || estimate > two_to_31) estimate = sum;
+
+                curr_vec.push_back(estimate);
             }
         }
 
@@ -344,7 +363,7 @@ private:
         // rotate the previous rightmost to the left so that it has the correct place in the permutation
         if (first != 0)
         {
-            rotate(clustering, previous_rightmost,final_root);
+            rotate(clustering, previous_rightmost, final_root);
         }
 
         // traceback into permutation and ignore the previous rightmost
@@ -408,4 +427,49 @@ private:
         trace(clustering, permutation, curr.left, previous_rightmost);
         trace(clustering, permutation, curr.right, previous_rightmost);
     }
+
+    bool restore_hlls(std::filesystem::path const & hll_cache_dir) 
+    {
+        // check for existence of all nececarry files
+        std::vector<std::filesystem::path> hll_paths;
+        
+        // collect all filenames and check for existence
+        for (auto const & filename : names)
+        {
+            hll_paths.push_back(hll_cache_dir / std::filesystem::path(filename).stem());
+            hll_paths.back() += ".hll";
+            if (!std::filesystem::exists(hll_paths.back())) return false;
+        }
+
+        // restore the hlls from the file
+        for (size_t i = 0; i < hll_paths.size(); ++i)
+        {
+            std::ifstream istrm(hll_paths[i], std::ios::binary);
+            hlls[i].restore(istrm);
+        }
+
+        return true;
+    }
+
+    void dump_hlls(std::filesystem::path const & hll_cache_dir) 
+    {
+        // check for non-existence of all nececarry files
+        std::vector<std::filesystem::path> hll_paths;
+        
+        // collect all filenames and delete if they already exist (to make sure nothing bad happens)
+        for (auto const & filename : names)
+        {
+            hll_paths.push_back(hll_cache_dir / std::filesystem::path(filename).stem());
+            hll_paths.back() += ".hll";
+            if (std::filesystem::exists(hll_paths.back())) std::filesystem::remove(hll_paths.back());
+        }
+
+        // dump the hlls to the file
+        for (size_t i = 0; i < hll_paths.size(); ++i)
+        {
+            std::ofstream ostrm(hll_paths[i], std::ios::binary);
+            hlls[i].dump(ostrm);
+        }
+    }
 };
+
