@@ -464,6 +464,11 @@ private:
             if (std::filesystem::exists(hll_paths.back())) std::filesystem::remove(hll_paths.back());
         }
 
+        if (!std::filesystem::exists(hll_cache_dir))
+        {
+           std::filesystem::create_directory(hll_cache_dir); 
+        }
+
         // dump the hlls to the file
         for (size_t i = 0; i < hll_paths.size(); ++i)
         {
