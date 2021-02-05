@@ -139,7 +139,7 @@ public:
         for (auto && handle : handles)
             handle.wait();
 
-        // check for cached hlls
+        // dump hlls
         if (!hll_cache_dir.empty())
         {
             dump_hlls(hll_cache_dir);
@@ -170,7 +170,7 @@ public:
             }
             ++last;
         }
-    
+
         // apply permutation to names, user_bin_kmar_counts and hlls
         for (size_t i = 0; i < permutation.size(); ++i)
         {
@@ -306,7 +306,7 @@ private:
         {
             size_t min_id = none;
             double min_dist = std::numeric_limits<double>::max();
-            
+
             // find the two nodes with the minimal distance
             for (auto & [i, prio_q] : dist)
             {
@@ -319,7 +319,7 @@ private:
                     min_id = i;
                 }
             }
-
+            
             size_t neighbor_id = dist[min_id].top().id;
 
             // merge the two nodes with minimal distance together and insert the new node into the clustering
@@ -348,7 +348,7 @@ private:
                 double const distance = 2 - (estimates[i] + estimates[id]) / estimate_ij;
                 prio_q.push({distance, id});
 
-                // make sure the closest neighbor is not yet deleted (this is kind of a lazy update)
+                // make sure the closest neighbor is not yet deleted (this is a lazy update)
                 while (dist.find(prio_q.top().id) == dist.end() && !prio_q.empty())
                 {
                     prio_q.pop();

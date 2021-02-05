@@ -129,10 +129,12 @@ public:
             if (zeros != 0) {
                 estimate = m_ * std::log(static_cast<double>(m_)/ zeros);
             }
-        } else if (estimate > (1.0 / 30.0) * pow_2_32) 
-        {
-            estimate = neg_pow_2_32 * log(1.0 - (estimate / pow_2_32));
-        }
+        } 
+        // we currently dont want this correction
+        // else if (estimate > (1.0 / 30.0) * pow_2_32) 
+        // {
+        //     estimate = neg_pow_2_32 * log(1.0 - (estimate / pow_2_32));
+        // }
         return estimate;
     }
 
