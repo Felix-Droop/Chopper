@@ -4,6 +4,7 @@
 #include <set>
 #include <string>
 #include <vector>
+#include <algorithm>
 
 #include <seqan3/std/charconv>
 
@@ -66,6 +67,7 @@ auto read_data_file_and_set_high_level_bins(build_config const & config)
                                                record.filenames.begin(),
                                                record.filenames.end());
             merged_bin_record.bins += record.bins;
+            merged_bin_record.max_size = std::max(record.max_size, merged_bin_record.max_size);
         }
         else
         {
