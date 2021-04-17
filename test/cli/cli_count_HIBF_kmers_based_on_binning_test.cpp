@@ -11,6 +11,13 @@
 TEST_F(cli_test, small_example)
 {
     seqan3::test::tmp_filename binning_filename{"test.binning"};
+    seqan3::test::tmp_filename counts_filename{"kmer_counts.txt"};
+    
+    {
+        std::ofstream fout{counts_filename.get_path()};
+        fout << data("small.fa").string() << '\t' << "585" << '\t' 
+             << data("small.fa").string() << '\n';
+    }
 
     {
         std::ofstream fout{binning_filename.get_path()};
@@ -22,20 +29,22 @@ TEST_F(cli_test, small_example)
     }
 
     cli_test_result result = execute_app("count_HIBF_kmers_based_on_binning",
+                                         "-c", counts_filename.get_path().c_str(),
                                          "-k", "25",
+                                         "-t", "1",
                                          "-f", binning_filename.get_path().c_str());
 
-    std::string expected_stderr
+    std::string expected_stdout
     {
-        "SPLIT_BIN_0\t292\n"
-        "SPLIT_BIN_0\t292\n"
-        "SPLIT_BIN_3\t195\n"
-        "SPLIT_BIN_3\t195\n"
-        "SPLIT_BIN_3\t195\n"
-        "MERGED_BIN_2\t585\n"
+        "SPLIT_BIN_0\t292\t0\n"
+        "SPLIT_BIN_0\t292\t0\n"
+        "SPLIT_BIN_3\t195\t0\n"
+        "SPLIT_BIN_3\t195\t0\n"
+        "SPLIT_BIN_3\t195\t0\n"
+        "MERGED_BIN_2\t585\t1170\n"
     };
 
     // compare results
-    EXPECT_EQ(result.out, std::string{});
-    EXPECT_EQ(result.err, expected_stderr);
+    EXPECT_EQ(result.out, expected_stdout);
+    EXPECT_EQ(result.err, std::string{});
 }

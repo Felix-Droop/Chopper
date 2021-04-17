@@ -3,18 +3,24 @@
 #include <future>
 #include <sstream>
 #include <string> 
+#include <unordered_map>
 
 #include <seqan3/argument_parser/all.hpp>
 #include <seqan3/core/debug_stream.hpp>
 #include <seqan3/range/views/kmer_hash.hpp>
 #include <seqan3/io/sequence_file/input.hpp>
 #include <seqan3/range/views/async_input_buffer.hpp>
+#include <seqan3/range/views/zip.hpp>
 
 #include <chopper/build/read_data_file_and_set_high_level_bins.hpp>
+#include <chopper/pack/pack_config.hpp>
+#include <chopper/pack/pack_data.hpp>
+#include <chopper/pack/filenames_data_input.hpp>
 
 struct cmd_arguments
 {
     std::filesystem::path binning_file{};
+    std::filesystem::path count_file{};
     uint8_t k{25};
     size_t threads{std::thread::hardware_concurrency()};
     bool verbose;
@@ -27,8 +33,10 @@ void initialize_argument_parser(seqan3::argument_parser & parser, cmd_arguments 
     parser.info.version = "1.0.0";
 
     parser.add_option(args.binning_file, 'f', "files", "Give me a file.", seqan3::option_spec::required);
+    parser.add_option(args.count_file, 'c', "counts", "Give me a kmer counts file.", seqan3::option_spec::required);
     parser.add_option(args.k, 'k', "kmer-size", "The kmer to count with.");
     parser.add_option(args.threads, 't', "threads", "The number of threads to use.");
+
 }
 
 struct file_type_traits : public seqan3::sequence_file_input_default_traits_dna
@@ -44,7 +52,8 @@ void print_safely(std::string & s)
     std::cout << s;
 } // lock_guard object is destroyed and mutex mu is released
 
-auto print_kmer_content(chopper_pack_record const & record, size_t const num_bins, uint8_t const k)
+auto print_kmer_content(chopper_pack_record const & record, size_t const num_bins, uint8_t const k, 
+                        std::unordered_map<std::string, size_t> const & counts)
 {
     using seq_file_type = seqan3::sequence_file_input<file_type_traits,
                                                       seqan3::fields<seqan3::field::seq>,
@@ -52,12 +61,17 @@ auto print_kmer_content(chopper_pack_record const & record, size_t const num_bin
 
     std::unordered_set<uint64_t> kmer_occurence{};
 
+    size_t low_lvl_kmer_sum = 0;
+    bool is_merged = starts_with(record.bin_name, merged_bin_prefix);
+
     for (auto const & filename : record.filenames)
+    {   
+        if (is_merged) low_lvl_kmer_sum += counts.at(filename);
+
         for (auto && [seq] : seq_file_type{filename})
             for (auto hash : seq | seqan3::views::kmer_hash(seqan3::ungapped{k}))
                 kmer_occurence.insert(hash);
-
-    size_t low_lvl_size = starts_with(record.bin_name, merged_bin_prefix) ? record.bins * record.max_size : 0;
+    }
 
     std::string s;
 
@@ -65,7 +79,7 @@ auto print_kmer_content(chopper_pack_record const & record, size_t const num_bin
     {
         s += record.bin_name + '\t';
         s += std::to_string(kmer_occurence.size() / num_bins) + '\t';
-        s += std::to_string(low_lvl_size) + '\n';
+        s += std::to_string(low_lvl_kmer_sum) + '\n';
     }
 
     print_safely(s);
@@ -92,6 +106,21 @@ int main(int const argc, char const ** argv)
 
     auto [header, records] = read_data_file_and_set_high_level_bins(config);
 
+    // Reuse the kmer counts file.
+    pack_config p_config;
+    p_config.data_file = args.count_file;
+
+    pack_data data;
+    read_filename_data_file(data, p_config);
+
+    std::unordered_map<std::string, size_t> counts; 
+
+    // make a simple lookup table for kmer counts
+    for (size_t i = 0; i < data.filenames.size(); ++i)
+    {
+        counts[data.filenames[i]] = data.kmer_counts[i];
+    }
+
     // setup async execution
     auto async_buf_records = records | seqan3::views::async_input_buffer(args.threads);    
 
@@ -101,11 +130,11 @@ int main(int const argc, char const ** argv)
         {
             if (starts_with(record.bin_name, split_bin_prefix))
             {
-                print_kmer_content(record, record.bins, args.k);
+                print_kmer_content(record, record.bins, args.k, counts);
             }
             else if (starts_with(record.bin_name, merged_bin_prefix))
             {
-                print_kmer_content(record, 1, args.k); // always one bin in high-level IBF, record.bins is for the low-level IBF
+                print_kmer_content(record, 1, args.k, counts); // always one bin in high-level IBF, record.bins is for the low-level IBF
             }
         }
     };
