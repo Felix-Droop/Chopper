@@ -171,7 +171,7 @@ public:
             ++last;
         }
 
-        // apply permutation to names, user_bin_kmar_counts and hlls
+        // apply permutation to names, user_bin_kmer_counts and hlls
         for (size_t i = 0; i < permutation.size(); ++i)
         {
             size_t current = i;
@@ -221,8 +221,7 @@ public:
                 size_t estimate = static_cast<size_t>(hlls[i].estimate());
 
                 // if the estimate is larger than the sum, use the sum instead
-                // if it is larger than 2^31, it is inaccurate. Use the sum instead
-                if (sum < estimate || estimate > two_to_31) estimate = sum;
+                if (sum < estimate) estimate = sum;
 
                 curr_vec.push_back(estimate);
             }
@@ -320,6 +319,11 @@ private:
                 }
             }
             
+            if (min_id == none)
+            {
+                throw std::runtime_error{"Something went wrong with the HyperLogLog Jaccard distance estimates."};
+            }
+
             size_t neighbor_id = dist[min_id].top().id;
 
             // merge the two nodes with minimal distance together and insert the new node into the clustering

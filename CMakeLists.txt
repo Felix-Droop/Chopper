@@ -4,6 +4,7 @@ cmake_minimum_required (VERSION 3.8...3.18)
 
 # Define the application name and version.
 project (chopper VERSION 1.0.0)
+set (CMAKE_CXX_STANDARD 17)
 
 ## BUILD
 
@@ -34,6 +35,11 @@ find_package (SeqAn3 QUIET REQUIRED HINTS lib/seqan3/build_system)
 set(CMAKE_PREFIX_PATH "${CMAKE_SOURCE_DIR}/lib/seqan/util/cmake")
 set(CMAKE_INCLUDE_PATH "${CMAKE_SOURCE_DIR}/lib/seqan/include/")
 include (${CMAKE_SOURCE_DIR}/lib/seqan/util/cmake/seqan-config.cmake)
+
+# Dependecy: xxHash
+# We don't need the command line application
+set(XXHASH_BUILD_XXHSUM OFF)
+add_subdirectory("${CMAKE_SOURCE_DIR}/lib/xxHash/cmake_unofficial")
 
 add_subdirectory (src)
 message (STATUS "${FontBold}You can run `make` to build the application.${FontReset}")

@@ -42,7 +42,7 @@ macro (add_app_test test_filename test_alternative)
 
     # Create the test target.
     add_executable (${target} ${test_filename})
-    target_link_libraries (${target} "${SEQAN_LIBRARIES}" seqan3::seqan3 gtest_all pthread)
+    target_link_libraries (${target} "${SEQAN_LIBRARIES}" seqan3::seqan3 gtest_all pthread xxHash::xxhash)
     target_include_directories ("${target}" PUBLIC ${CMAKE_SOURCE_DIR}/include)
     target_include_directories ("${target}" PUBLIC ${CMAKE_SOURCE_DIR}/lib/lemon/include)
     target_include_directories ("${target}" PUBLIC ${CMAKE_SOURCE_DIR}/lib/seqan3/test/include)

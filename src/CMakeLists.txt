@@ -8,6 +8,7 @@ target_compile_definitions ("${PROJECT_NAME}" PUBLIC ${SEQAN_DEFINITIONS})
 target_compile_options ("${PROJECT_NAME}" PUBLIC ${SEQAN_CXX_FLAGS_LIST})
 target_link_libraries ("${PROJECT_NAME}" PUBLIC "${SEQAN_LIBRARIES}")
 target_include_directories ("${PROJECT_NAME}" PUBLIC "${SEQAN_INCLUDE_DIRS}")
+target_link_libraries("${PROJECT_NAME}" PUBLIC xxHash::xxhash)
 
 add_executable (count_kmers_per_bin count_kmers_per_bin.cpp)
 target_link_libraries (count_kmers_per_bin PUBLIC seqan3::seqan3)
