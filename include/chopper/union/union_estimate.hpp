@@ -61,10 +61,10 @@ private:
 
 public:
     /*!\brief Constructor of the union_estimate that supplies it with all the important data
-     * \param[in] names names of the sequence files
-     * \param[in] user_bin_kmer_counts cardinalities of the single sets for the diagonal of the output table
-     * \param[in] kmer_size size of k-mers
-     * \param[in] sketch_bits The number of bits the HyperLogLog sketch should use to distribute the values into bins
+     * \param[in] names_ names of the sequence files
+     * \param[in] user_bin_kmer_counts_ cardinalities of the single sets for the diagonal of the output table
+     * \param[in] kmer_size_ size of k-mers
+     * \param[in] sketch_bits_ The number of bits the HyperLogLog sketch should use to distribute the values into bins
      */
     union_estimate(std::vector<std::string> & names_,
                    std::vector<size_t> & user_bin_kmer_counts_,
@@ -82,6 +82,7 @@ public:
 
     /*!\brief Construct HyperLogLog sketches from the sequences given by the member names
      * \param[in] num_threads number of threads to use
+     * \param[in] hll_cache_dir path to the directory where hll caches are maybe found and will be dumped
      */
     void build_hlls(size_t num_threads, std::filesystem::path const & hll_cache_dir)
     {

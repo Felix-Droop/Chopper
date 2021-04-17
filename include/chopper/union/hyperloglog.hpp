@@ -20,11 +20,6 @@
 #include <numeric>
 
 namespace hll {
-
-static auto two_to_neg_pow = [] (uint8_t const x) 
-{ 
-    return 1.0 / (1 << x);
-};
 static auto maximum = [] (uint8_t const x, uint8_t const y) 
 {
     return std::max(x, y);
@@ -98,8 +93,15 @@ public:
      */
     double estimate() const 
     {
-        double sum = std::transform_reduce(M_.cbegin(), M_.cend(), 0.0, 
-                                           std::plus<double>(), two_to_neg_pow);
+        // this sadly only works for g++ 9.3 or newer even though it is in the c++17 standard
+        // double sum = std::transform_reduce(M_.cbegin(), M_.cend(), 0.0, 
+        //                                    std::plus<double>(), two_to_neg_pow);
+        double sum = 0.0;
+        for (uint8_t c : M_)
+        {
+            sum += 1.0 / (1 << c);
+        }
+
         double estimate = alphaMM_ / sum; 
 
         // use linear counting of zeros for small values
