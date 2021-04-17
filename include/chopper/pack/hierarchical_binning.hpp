@@ -185,8 +185,9 @@ private:
         // initialize first row
         for (size_t j = 1; j < num_user_bins; ++j)
         {
-            matrix[0][j] = union_estimates[0][j];
-            ll_matrix[0][j] = alpha * (user_bin_kmer_counts[j]) + ll_matrix[0][j - 1];
+            size_t sum = user_bin_kmer_counts[j] + matrix[0][j - 1];
+            matrix[0][j] = union_estimate_wanted ? union_estimates[0][j] : sum;
+            ll_matrix[0][j] = /*alpha * */sum;
             trace[0][j] = {0u, j - 1}; // unnecessary?
         }
     }
