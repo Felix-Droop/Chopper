@@ -3,6 +3,7 @@
 #include <chopper/pack/aggregate_by.hpp>
 #include <chopper/pack/hierarchical_binning.hpp>
 #include <chopper/pack/filenames_data_input.hpp>
+#include <chopper/union/print_peak_memory_usage.hpp>
 
 int set_up_and_parse_subparser_split(seqan3::argument_parser & parser, pack_config & config)
 {
@@ -107,6 +108,8 @@ int chopper_pack(seqan3::argument_parser & parser)
     std::ofstream fout{config.output_filename};
     fout << header_buffer.rdbuf();
     fout << output_buffer.rdbuf();
+
+    print_peak_memory_usage();
 
     return 0;
 }

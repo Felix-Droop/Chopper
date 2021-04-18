@@ -89,4 +89,8 @@ void count_kmers(std::unordered_map<std::string, std::vector<std::string>> const
 
     for (size_t i = 0; i < counting_threads; ++i)
         handles.emplace_back(std::async(std::launch::async, worker));
+
+    // wait for the threads to finish to measure peak memory usage afterwards
+    for (auto & handle : handles)
+        handle.wait();
 }
