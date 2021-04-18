@@ -38,6 +38,9 @@ int set_up_and_parse_subparser_split(seqan3::argument_parser & parser, pack_conf
     parser.add_option(config.alpha, 'a', "alpha",
                       "The scaling factor to influence the number of merged bins.");
 
+    parser.add_option(config.max_ratio, 'm', "max-ratio",
+                      "The maximal cardinality ratio in the clustering intervals (must be < 1).");
+
     parser.add_option(config.output_filename, 'o', "outfile",
                       "An output file name for the binning results.");
 

@@ -93,15 +93,12 @@ public:
      */
     double estimate() const 
     {
-        // this sadly only works for g++ 9.3 or newer even though it is in the c++17 standard
-        // double sum = std::transform_reduce(M_.cbegin(), M_.cend(), 0.0, 
-        //                                    std::plus<double>(), two_to_neg_pow);
+        // compute indicator formula
         double sum = 0.0;
         for (uint8_t c : M_)
         {
             sum += 1.0 / (1 << c);
         }
-
         double estimate = alphaMM_ / sum; 
 
         // use linear counting of zeros for small values

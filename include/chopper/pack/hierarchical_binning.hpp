@@ -54,6 +54,8 @@ private:
     bool const union_estimate_wanted;
     //!\brief Whether to do a second sorting of the bins which takes into account similarity or not.
     bool const resort_bins_wanted;
+    //!\brief The maximal cardinality ratio in the clustering intervals.
+    double const max_ratio;
 
     //!\brief A reference to the output stream to cache the results to.
     std::stringstream & output_buff;
@@ -83,6 +85,7 @@ public:
         num_threads{config.num_threads},
         union_estimate_wanted{config.union_estimate},
         resort_bins_wanted{config.resort_bins},
+        max_ratio{config.max_ratio},
         output_buff{*data.output_buffer},
         header_buff{*data.header_buffer}
     {
@@ -101,15 +104,15 @@ public:
         // seqan3::debug_stream << std::endl << "Sorted list: " << user_bin_kmer_counts << std::endl << std::endl;
 
         std::vector<std::vector<size_t>> union_estimates;
-        union_estimate estimator(names, user_bin_kmer_counts, kmer_size, sketch_bits);
+        union_estimate estimate(names, user_bin_kmer_counts, sketch_bits);
 
         if (union_estimate_wanted)
         {
-            estimator.build_hlls(num_threads, hll_cache_dir);
+            estimate.build_hlls(num_threads, hll_cache_dir, kmer_size);
 
-            if (resort_bins_wanted) estimator.resort_bins();
+            if (resort_bins_wanted) estimate.resort_bins(max_ratio);
             
-            estimator.estimate_unions(union_estimates);
+            estimate.estimate_unions(union_estimates);
         }
         
         std::vector<std::vector<size_t>> matrix(num_technical_bins); // rows

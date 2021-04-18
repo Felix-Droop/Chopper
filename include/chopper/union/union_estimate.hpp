@@ -47,12 +47,6 @@ private:
     //!\brief HyperLogLog sketches on the sequences from the above files.
     std::vector<hll::HyperLogLog> hlls;
 
-    //!\brief The number of bits the HyperLogLog sketch should use to distribute the values into bins.
-    uint8_t const sketch_bits;
-
-    //!\brief The k of the k-mers.
-    size_t const kmer_size;
-
     //!\brief Whether build_hlls() has been called
     bool built_hlls;
 
@@ -63,18 +57,14 @@ public:
     /*!\brief Constructor of the union_estimate that supplies it with all the important data
      * \param[in] names_ names of the sequence files
      * \param[in] user_bin_kmer_counts_ cardinalities of the single sets for the diagonal of the output table
-     * \param[in] kmer_size_ size of k-mers
-     * \param[in] sketch_bits_ The number of bits the HyperLogLog sketch should use to distribute the values into bins
+     * \param[in] sketch_bits The number of bits the HyperLogLog sketch should use to distribute the values into bins
      */
     union_estimate(std::vector<std::string> & names_,
                    std::vector<size_t> & user_bin_kmer_counts_,
-                   size_t kmer_size_, 
-                   uint8_t sketch_bits_) :
+                   uint8_t const sketch_bits) :
         names{names_},
         user_bin_kmer_counts{user_bin_kmer_counts_},
-        hlls(names.size(), hll::HyperLogLog(sketch_bits_)),
-        sketch_bits{sketch_bits_},
-        kmer_size{kmer_size_},
+        hlls(names.size(), hll::HyperLogLog(sketch_bits)),
         built_hlls{false},
         invalidated{false}
     {
@@ -83,8 +73,11 @@ public:
     /*!\brief Construct HyperLogLog sketches from the sequences given by the member names
      * \param[in] num_threads number of threads to use
      * \param[in] hll_cache_dir path to the directory where hll caches are maybe found and will be dumped
+     * \param[in] kmer_size size of k-mers
      */
-    void build_hlls(size_t num_threads, std::filesystem::path const & hll_cache_dir)
+    void build_hlls(size_t num_threads, 
+                    std::filesystem::path const & hll_cache_dir, 
+                    size_t const kmer_size)
     {
         if (invalidated) throw std::runtime_error{"Can only use this instance once."};
         if (built_hlls) return; 
@@ -106,7 +99,7 @@ public:
         auto filenames = seqan3::views::zip(names, std::views::iota(0u, names.size()))
                        | seqan3::views::async_input_buffer(num_threads);
 
-        auto worker = [&filenames, this] ()
+        auto worker = [&filenames, kmer_size, this] ()
         {
             // build hll sketches from the sequences of all files
             for (auto && [filename, hll_index] : filenames)
@@ -149,14 +142,16 @@ public:
         built_hlls = true;
     }
 
-    //!\brief Reorder names, user_bin_kmer_counts and hlls such that similar bins are close to each other
-    void resort_bins()
+
+    /*!\brief Reorder names, user_bin_kmer_counts and hlls such that similar bins are close to each other
+     * \param[in] max_ratio the maximal cardinality ratio in the clustering intervals (must be < 1)
+     */
+    void resort_bins(double const max_ratio)
     {
         if (invalidated) throw std::runtime_error{"Can only use this instance once."};
         if (!built_hlls) throw std::runtime_error{"Must build hlls first."};
 
         std::vector<size_t> permutation;
-        double const max_ratio = 0.5;
 
         size_t first = 0;
         size_t last = 1;

@@ -14,6 +14,7 @@ struct pack_config
     uint8_t sketch_bits{12};
     size_t num_threads{std::thread::hardware_concurrency()};
     double alpha{10};
+    double max_ratio{0.5};
     int aggregate_by_column{-1};
     bool union_estimate{false};
     bool resort_bins{false};
