@@ -5,16 +5,20 @@
 #include <unordered_map>
 
 #include <seqan3/test/expect_range_eq.hpp>
+#include <seqan3/test/tmp_filename.hpp>
 
 #include <chopper/count/count_config.hpp>
 #include <chopper/count/count_kmers.hpp>
 
 TEST(count_kmers_test, small_example_serial)
 {
+    seqan3::test::tmp_filename output_filename{"kmer_counts.txt"};
+
     count_config config;
     config.k = 15;
     config.w = 25;
     config.num_threads = 1;
+    config.output_filename = output_filename.get_path();
 
     std::string input_file = DATADIR"small.fa";
 
@@ -30,18 +34,23 @@ TEST(count_kmers_test, small_example_serial)
         input_file + "\t95\tTAX1\n"
     };
 
-    testing::internal::CaptureStdout();
     count_kmers(filename_clusters, config);
-    std::string std_cout = testing::internal::GetCapturedStdout();
-    EXPECT_EQ(expected, std_cout);
+
+    std::ifstream output_file{output_filename.get_path()};
+    std::string const output_file_str((std::istreambuf_iterator<char>(output_file)), std::istreambuf_iterator<char>());
+
+    EXPECT_EQ(expected, output_file_str);
 }
 
 TEST(count_kmers_test, small_example_parallel_2_threads)
 {
+    seqan3::test::tmp_filename output_filename{"kmer_counts.txt"};
+
     count_config config;
     config.k = 15;
     config.w = 25;
     config.num_threads = 2;
+    config.output_filename = output_filename.get_path();
 
     std::string input_file = DATADIR"small.fa";
 
@@ -57,8 +66,10 @@ TEST(count_kmers_test, small_example_parallel_2_threads)
         input_file + "\t95\tTAX1\n"
     };
 
-    testing::internal::CaptureStdout();
     count_kmers(filename_clusters, config);
-    std::string std_cout = testing::internal::GetCapturedStdout();
-    EXPECT_EQ(expected, std_cout);
+    
+    std::ifstream output_file{output_filename.get_path()};
+    std::string const output_file_str((std::istreambuf_iterator<char>(output_file)), std::istreambuf_iterator<char>());
+
+    EXPECT_EQ(expected, output_file_str);
 }

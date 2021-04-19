@@ -22,6 +22,7 @@ TEST_F(cli_test, chopper_pipeline)
     // =========================================================================
     std::string seq_filename = DATADIR"small.fa";
     seqan3::test::tmp_filename const taxa_filename{"data.tsv"};
+    seqan3::test::tmp_filename count_filename{"kmer_counts.txt"};
 
     // we need to have tax ids from the user
     {
@@ -37,7 +38,8 @@ TEST_F(cli_test, chopper_pipeline)
                                                "-w", "25",
                                                "-t", "2",
                                                "-c", "2",
-                                               "-f", taxa_filename.get_path().c_str());
+                                               "-f", taxa_filename.get_path().c_str(),
+                                               "-o", count_filename.get_path().c_str());
 
     std::vector<std::string> expected_components
     {
@@ -46,22 +48,17 @@ TEST_F(cli_test, chopper_pipeline)
         seq_filename + "\t95\tTAX1"
     };
 
+    std::ifstream count_file{count_filename.get_path()};
+    std::string const count_file_str((std::istreambuf_iterator<char>(count_file)), std::istreambuf_iterator<char>());
+
     size_t line_count{};
-    for (auto && line : count_result.out | std::views::split('\n') | seqan3::views::to<std::vector<std::string>>)
+    for (auto && line : count_file_str | std::views::split('\n') | seqan3::views::to<std::vector<std::string>>)
     {
         EXPECT_TRUE(std::ranges::find(expected_components, line) != expected_components.end());
         ++line_count;
     }
 
     EXPECT_EQ(expected_components.size(), line_count);
-
-    // Write count_result to output file (user would pipe the output)
-    seqan3::test::tmp_filename const count_filename{"data.tsv"};
-
-    {
-        std::ofstream fout{count_filename.get_path()};
-        fout << (expected_components | seqan3::views::join(std::string{'\n'}) | seqan3::views::to<std::string>);
-    }
 
     // CHOPPER PACK
     // =========================================================================

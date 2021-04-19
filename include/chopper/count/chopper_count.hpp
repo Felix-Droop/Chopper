@@ -18,6 +18,7 @@ void initialize_argument_parser(seqan3::argument_parser & parser, count_config &
     parser.info.version = "1.0.0";
 
     parser.add_option(config.data_file, 'f', "data_file", "Give me a filename to a seqinfo file.", seqan3::option_spec::required);
+    parser.add_option(config.output_filename, 'o', "outfile", "An output file name for the binning results.");
     parser.add_option(config.column_index_to_cluster, 'c', "column-index", "The column index by which to cluster.");
     parser.add_option(config.num_threads, 't', "threads", "Number of threads.");
     parser.add_option(config.k, 'k', "kmer-size", "The kmer size to count minimisers.");

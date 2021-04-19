@@ -6,6 +6,7 @@
 struct count_config
 {
     std::filesystem::path data_file{};
+    std::filesystem::path output_filename{"kmer_counts.txt"};
     size_t column_index_to_cluster{1};
     size_t num_threads{std::thread::hardware_concurrency()};
     uint8_t k{25};

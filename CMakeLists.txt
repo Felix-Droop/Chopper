@@ -41,7 +41,7 @@ include (${CMAKE_SOURCE_DIR}/lib/seqan/util/cmake/seqan-config.cmake)
 # Dependecy: xxHash
 # We don't need the command line application
 set(XXHASH_BUILD_XXHSUM OFF)
-add_subdirectory("${CMAKE_SOURCE_DIR}/lib/xxHash/cmake_unofficial")
+add_subdirectory("${CMAKE_SOURCE_DIR}/lib/xxHash/cmake_unofficial" "${CMAKE_BINARY_DIR}/lib/xxHash/" EXCLUDE_FROM_ALL)
 
 add_subdirectory (src)
 message (STATUS "${FontBold}You can run `make` to build the application.${FontReset}")
