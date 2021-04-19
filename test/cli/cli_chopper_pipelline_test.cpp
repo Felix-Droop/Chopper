@@ -36,29 +36,23 @@ TEST_F(cli_test, chopper_pipeline)
     cli_test_result count_result = execute_app("chopper", "count",
                                                "-k", "15",
                                                "-w", "25",
-                                               "-t", "2",
+                                               "-t", "1",
                                                "-c", "2",
                                                "-f", taxa_filename.get_path().c_str(),
                                                "-o", count_filename.get_path().c_str());
 
-    std::vector<std::string> expected_components
+    std::string expected
     {
-        seq_filename + "\t95\tTAX3",
-        seq_filename + ";" + seq_filename + "\t95\tTAX2",
-        seq_filename + "\t95\tTAX1"
+        seq_filename + "\t95\tTAX3\n" +
+        seq_filename + ";" + seq_filename + "\t95\tTAX2\n" +
+        seq_filename + "\t95\tTAX1\n"
     };
 
     std::ifstream count_file{count_filename.get_path()};
     std::string const count_file_str((std::istreambuf_iterator<char>(count_file)), std::istreambuf_iterator<char>());
 
-    size_t line_count{};
-    for (auto && line : count_file_str | std::views::split('\n') | seqan3::views::to<std::vector<std::string>>)
-    {
-        EXPECT_TRUE(std::ranges::find(expected_components, line) != expected_components.end());
-        ++line_count;
-    }
-
-    EXPECT_EQ(expected_components.size(), line_count);
+    // compare intermediate results
+    EXPECT_EQ(expected, count_file_str);
 
     // CHOPPER PACK
     // =========================================================================
