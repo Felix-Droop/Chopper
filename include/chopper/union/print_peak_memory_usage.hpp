@@ -7,14 +7,13 @@
 void print_peak_memory_usage()
 {
     rusage usage;
-    int ret = getrusage(RUSAGE_SELF, &usage); 
 
-    if (ret == 0)
+    if (getrusage(RUSAGE_SELF, &usage) == 0)
     {
-        std::cout << "peak memory usage: " << usage.ru_maxrss << '\n';
+        std::cout << "peak memory usage: " << usage.ru_maxrss << " kilobytes" << std::endl;
     }
     else 
     {
-        std::cout << "Couldn't determine peak memory usage.\n";
+        std::cout << "couldn't determine peak memory usage" << std::endl;
     }
 }
