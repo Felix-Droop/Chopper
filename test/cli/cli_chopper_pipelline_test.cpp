@@ -36,23 +36,38 @@ TEST_F(cli_test, chopper_pipeline)
     cli_test_result count_result = execute_app("chopper", "count",
                                                "-k", "15",
                                                "-w", "25",
-                                               "-t", "1",
+                                               "-t", "2",
                                                "-c", "2",
                                                "-f", taxa_filename.get_path().c_str(),
                                                "-o", count_filename.get_path().c_str());
 
-    std::string expected
+    std::vector<std::string> expected_components
     {
-        seq_filename + "\t95\tTAX3\n" +
-        seq_filename + ";" + seq_filename + "\t95\tTAX2\n" +
-        seq_filename + "\t95\tTAX1\n"
+        seq_filename + "\t95\tTAX3",
+        seq_filename + ";" + seq_filename + "\t95\tTAX2",
+        seq_filename + "\t95\tTAX1"
     };
 
     std::ifstream count_file{count_filename.get_path()};
     std::string const count_file_str((std::istreambuf_iterator<char>(count_file)), std::istreambuf_iterator<char>());
 
-    // compare intermediate results
-    EXPECT_EQ(expected, count_file_str);
+    size_t line_count{};
+    for (auto && line : count_file_str | std::views::split('\n') | seqan3::views::to<std::vector<std::string>>)
+    {
+        EXPECT_TRUE(std::ranges::find(expected_components, line) != expected_components.end());
+        ++line_count;
+    }
+
+    EXPECT_EQ(expected_components.size(), line_count);
+
+    // Overwrite result file to eliminate output order ambiguities due to multithreading
+    // for equality of the reults is checked above
+    seqan3::test::tmp_filename const count_filename2{"data.tsv"};
+
+    {
+        std::ofstream fout{count_filename2.get_path()};
+        fout << (expected_components | seqan3::views::join(std::string{'\n'}) | seqan3::views::to<std::string>);
+    }
 
     // CHOPPER PACK
     // =========================================================================
@@ -60,7 +75,7 @@ TEST_F(cli_test, chopper_pipeline)
 
     cli_test_result pack_result = execute_app("chopper", "pack",
                                               "-b", "2",
-                                              "-f", count_filename.get_path().c_str(),
+                                              "-f", count_filename2.get_path().c_str(),
                                               "-o", binning_filename.get_path().c_str());
 
     std::string expected_file
