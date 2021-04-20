@@ -9,7 +9,7 @@
 #include <chopper/count/count_config.hpp>
 #include <chopper/count/count_kmers.hpp>
 #include <chopper/count/read_data_file.hpp>
-#include <chopper/union/print_peak_memory_usage.hpp>
+#include <chopper/print_peak_memory_usage.hpp>
 
 void initialize_argument_parser(seqan3::argument_parser & parser, count_config & config)
 {

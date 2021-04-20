@@ -3,7 +3,7 @@
 #include <chopper/pack/aggregate_by.hpp>
 #include <chopper/pack/hierarchical_binning.hpp>
 #include <chopper/pack/filenames_data_input.hpp>
-#include <chopper/union/print_peak_memory_usage.hpp>
+#include <chopper/print_peak_memory_usage.hpp>
 
 int set_up_and_parse_subparser_split(seqan3::argument_parser & parser, pack_config & config)
 {
