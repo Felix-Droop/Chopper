@@ -23,7 +23,7 @@ TEST(hyperloglog_test, initialization)
     size_t const b = 4;
     size_t const m = 1 << b;
 
-    hll::HyperLogLog sketch(b);
+    hyperloglog sketch(b);
     
     EXPECT_EQ(sketch.registerSize(), m);
 
@@ -38,7 +38,7 @@ TEST(hyperloglog_test, add_and_estimate_small)
     size_t const b = 4;
     size_t const m = 1 << b;
 
-    hll::HyperLogLog sketch(b);
+    hyperloglog sketch(b);
 
     // XXH3_64bits hash -> first 4 bits: 0000, rank: 3
     sketch.add("bla", 3); 
@@ -73,7 +73,7 @@ TEST(hyperloglog_test, add_and_estimate_large)
 
     size_t const b = 4;
     size_t const m = 1 << b;
-    hll::HyperLogLog sketch(b);
+    hyperloglog sketch(b);
 
     std::unordered_set<std::string> control;
 
@@ -106,9 +106,9 @@ TEST(hyperloglog_test, merge)
 
     size_t const b = 4;
     size_t const m = 1 << b;
-    hll::HyperLogLog full_sketch(b);
-    hll::HyperLogLog merge_sketch(b);
-    std::vector<hll::HyperLogLog> partial_sketches;
+    hyperloglog full_sketch(b);
+    hyperloglog merge_sketch(b);
+    std::vector<hyperloglog> partial_sketches;
 
     sequence_file_type seq_file{input_file};
 
@@ -147,8 +147,8 @@ TEST(hyperloglog_test, dump_and_restore)
 
     size_t const b = 4;
     size_t const m = 1 << b;
-    hll::HyperLogLog dump_sketch(b);
-    hll::HyperLogLog restore_sketch(b);
+    hyperloglog dump_sketch(b);
+    hyperloglog restore_sketch(b);
 
     sequence_file_type seq_file{input_file};
 

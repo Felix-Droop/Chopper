@@ -19,16 +19,10 @@
 #include <xxh3.h>
 #include <numeric>
 
-namespace hll {
-static auto maximum = [] (uint8_t const x, uint8_t const y) 
-{
-    return std::max(x, y);
-};
-
 /** @class HyperLogLog
  *  @brief Implement of 'HyperLogLog' estimate cardinality algorithm
  */
-class HyperLogLog 
+class hyperloglog 
 {
 public:
 
@@ -40,7 +34,7 @@ public:
      *
      * @exception std::invalid_argument the argument is out of range.
      */
-    HyperLogLog(uint8_t b = 4) :
+    hyperloglog(uint8_t b = 4) :
             m_(1 << b), b_(b), M_(m_, 0) {
 
         if (b < 4 || 30 < b) 
@@ -97,7 +91,7 @@ public:
         double sum = 0.0;
         for (uint8_t c : M_)
         {
-            sum += 1.0 / (1 << c);
+            sum += 1.0 / (1ull << c);
         }
         double estimate = alphaMM_ / sum; 
 
@@ -105,7 +99,7 @@ public:
         if (estimate <= 2.5 * m_) 
         {
             uint64_t zeros = std::count(M_.cbegin(), M_.cend(), 0);
-            if (zeros != 0) 
+            if (zeros != 0ull) 
             {
                 estimate = m_ * std::log(static_cast<double>(m_) / zeros);
             }
@@ -121,7 +115,7 @@ public:
      * 
      * @exception std::invalid_argument number of registers doesn't match.
      */
-    void merge(HyperLogLog const & other) 
+    void merge(hyperloglog const & other) 
     {
         if (m_ != other.m_) 
         {
@@ -131,7 +125,10 @@ public:
         }
 
         std::transform(M_.begin(), M_.end(), other.M_.begin(), 
-                       M_.begin(), maximum);
+            M_.begin(), [] (uint8_t const x, uint8_t const y) 
+            {
+                return std::max(x, y);
+            });
     }
 
     /**
@@ -157,7 +154,7 @@ public:
      *
      * @param[in,out] rhs Another HyperLogLog instance
      */
-    void swap(HyperLogLog& rhs) 
+    void swap(hyperloglog& rhs) 
     {
         std::swap(mask_, rhs.mask_);
         std::swap(alphaMM_, rhs.alphaMM_);
@@ -195,7 +192,7 @@ public:
     {
         uint8_t b = 0;
         is.read((char*)&b, sizeof(b));
-        HyperLogLog tempHLL(b);
+        hyperloglog tempHLL(b);
         is.read((char*)&(tempHLL.M_[0]), sizeof(M_[0]) * tempHLL.m_);
         if (is.fail())
         {
@@ -211,5 +208,3 @@ private:
     uint8_t b_; ///< register bit width
     std::vector<uint8_t> M_; ///< registers
 };
-
-} // namespace hll
