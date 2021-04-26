@@ -41,7 +41,7 @@ public:
     /*!\brief A sequence of user bins for which filenames and counts are given. This constructor reads 
               the HyperLogLog sketches from the hll_dir
      * \param[in] filenames_ filenames of the sequence files for the user bins
-     * \param[in] filenames_ filenames of the sequence files for the user bins
+     * \param[in] user_bin_kmer_counts_ counts of the k-mer sets of the bins corresponding to filenames
      * \param[in] hll_dir path to the directory where hll caches will be found
      */
     user_bin_sequence(std::vector<std::string> & filenames_,
