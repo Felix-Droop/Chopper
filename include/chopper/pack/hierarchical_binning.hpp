@@ -17,7 +17,8 @@
 #include <chopper/pack/pack_data.hpp>
 #include <chopper/pack/print_matrix.hpp>
 #include <chopper/pack/simple_binning.hpp>
-#include <chopper/union/union_estimate.hpp>
+
+#include <chopper/union/user_bin_sequence.hpp>
 
 struct hierarchical_binning
 {
@@ -42,14 +43,9 @@ private:
     //!\brief The average count calculated from kmer_count_sum / num_technical_bins.
     size_t const kmer_count_average_per_bin;
 
-    //!\brief The k of the k-mers.
-    uint8_t const kmer_size;
     //!\brief If given, the hll sketches are dumped to this directory and restored when they already exist.
-    std::filesystem::path hll_cache_dir{};
-    //!\brief The number of bits the HyperLogLog sketch should use to distribute the values into bins.
-    uint8_t const sketch_bits;
-    //!\brief The number of threads for building the hlls.
-    size_t const num_threads;
+    std::filesystem::path const & hll_dir;
+
     //!\brief Whether to estimate the union of kmer sets to possibly improve the binning or not.
     bool const union_estimate_wanted;
     //!\brief Whether to do a second sorting of the bins which takes into account similarity or not.
@@ -79,10 +75,7 @@ public:
         num_technical_bins{(config.bins == 0) ? ((user_bin_kmer_counts.size() + 63) / 64 * 64) : config.bins},
         kmer_count_sum{std::accumulate(user_bin_kmer_counts.begin(), user_bin_kmer_counts.end(), 0u)},
         kmer_count_average_per_bin{std::max<size_t>(1u, kmer_count_sum / num_technical_bins)},
-        kmer_size{config.k},
-        hll_cache_dir{config.hll_cache_dir},
-        sketch_bits{config.sketch_bits},
-        num_threads{config.num_threads},
+        hll_dir{config.hll_dir},
         union_estimate_wanted{config.union_estimate},
         resort_bins_wanted{config.resort_bins},
         max_ratio{config.max_ratio},
@@ -103,18 +96,21 @@ public:
         sort_by_distribution(names, user_bin_kmer_counts);
         // seqan3::debug_stream << std::endl << "Sorted list: " << user_bin_kmer_counts << std::endl << std::endl;
 
-        std::vector<std::vector<size_t>> union_estimates;
-        union_estimate estimate(names, user_bin_kmer_counts, sketch_bits);
+        std::vector<std::vector<uint64_t>> union_estimates;
 
+        // Depending on cli flags given, use HyperLogLog estimates and/or rearrangement algorithms
         if (union_estimate_wanted)
         {
-            estimate.build_hlls(num_threads, hll_cache_dir, kmer_size);
+            user_bin_sequence ub_seq(names, user_bin_kmer_counts, hll_dir);
 
-            if (resort_bins_wanted) estimate.resort_bins(max_ratio);
-            
-            estimate.estimate_unions(union_estimates);
+            if (resort_bins_wanted) 
+            {
+                ub_seq.rearrange_bins(max_ratio);
+            }
+
+            ub_seq.estimate_interval_unions(union_estimates);
         }
-        
+
         std::vector<std::vector<size_t>> matrix(num_technical_bins); // rows
         for (auto & v : matrix)
             v.resize(num_user_bins, std::numeric_limits<size_t>::max()); // columns
@@ -176,7 +172,7 @@ private:
     void initialization(std::vector<std::vector<size_t>> & matrix,
                         std::vector<std::vector<size_t>> & ll_matrix,
                         std::vector<std::vector<std::pair<size_t, size_t>>> & trace,
-                        std::vector<std::vector<size_t>> const & union_estimates)
+                        std::vector<std::vector<uint64_t>> const & union_estimates)
     {
         // initialize first column
         for (size_t i = 0; i < num_technical_bins; ++i)
@@ -190,7 +186,7 @@ private:
         {
             size_t sum = user_bin_kmer_counts[j] + matrix[0][j - 1];
             matrix[0][j] = union_estimate_wanted ? union_estimates[0][j] : sum;
-            ll_matrix[0][j] = /*alpha * */sum;
+            ll_matrix[0][j] = sum;
             trace[0][j] = {0u, j - 1}; // unnecessary?
         }
     }
@@ -236,7 +232,7 @@ private:
     void recursion(std::vector<std::vector<size_t>> & matrix,
                    std::vector<std::vector<size_t>> & ll_matrix,
                    std::vector<std::vector<std::pair<size_t, size_t>>> & trace,
-                   std::vector<std::vector<size_t>> const & union_estimates)
+                   std::vector<std::vector<uint64_t>> const & union_estimates)
     {
         // we must iterate column wise
         for (size_t j = 1; j < num_user_bins; ++j)

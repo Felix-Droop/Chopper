@@ -11,11 +11,14 @@
 #include <seqan3/range/views/kmer_hash.hpp>
 #include <seqan3/range/views/minimiser_hash.hpp>
 #include <seqan3/range/views/to.hpp>
+#include <seqan3/std/filesystem>
+
+#include <chopper/union/hyperloglog.hpp>
 
 std::mutex mu;
 
 void print_safely(std::pair<std::string, std::vector<std::string>> const & cluster,
-                  std::set<uint64_t> const & result,
+                  uint64_t size,
                   std::ofstream & fout)
 {
     std::lock_guard<std::mutex> lock(mu);  // Acquire the mutex
@@ -24,7 +27,7 @@ void print_safely(std::pair<std::string, std::vector<std::string>> const & clust
     fout << cluster.second[0]; // write first filename
     for (size_t i = 1; i < cluster.second.size(); ++i)
         fout << ";" << cluster.second[i];
-    fout << '\t' << result.size() << '\t' << cluster.first << std::endl;;
+    fout << '\t' << size << '\t' << cluster.first << std::endl;;
 
 }// lock_guard object is destroyed and mutex mu is released
 
@@ -38,15 +41,48 @@ using sequence_file_type = seqan3::sequence_file_input<mytraits,
                                                        seqan3::type_list<seqan3::format_fasta, seqan3::format_fastq>>;
 
 template <typename cluster_view_type, typename compute_view_type>
-void compute_hashes(cluster_view_type && cluster_view, compute_view_type && compute_fn, std::ofstream & fout)
+void compute_hashes(cluster_view_type && cluster_view, compute_view_type && compute_fn, std::ofstream & fout,
+                    bool const exclusively_hlls, std::filesystem::path const & hll_dir, uint8_t sketch_bits)
 {
     for (auto && [cluster, sequence_vector] : cluster_view)
     {
         std::set<uint64_t> result;
+        hyperloglog sketch(sketch_bits);
+
         for (auto && seq : sequence_vector)
+        {
             for (auto hash : seq | compute_fn)
-                result.insert(hash);
-        print_safely(cluster, result, fout);
+            {
+                if (!exclusively_hlls)
+                {
+                    result.insert(hash);
+                }
+                if (exclusively_hlls || !hll_dir.empty())
+                {
+                    sketch.add(reinterpret_cast<char*>(&hash), sizeof(hash));
+                }
+            }
+        }
+
+        // print either the exact or the approximate count, depending on exclusively_hlls
+        uint64_t size = exclusively_hlls ? static_cast<uint64_t>(sketch.estimate()) : result.size();
+        print_safely(cluster, size, fout);
+
+        if (!hll_dir.empty())
+        {
+            // For more than one file in the cluster, Felix doesn't know how to name the file
+            // and what exactly is supposed to happen.
+            if (cluster.second.size() > 1)
+            {
+                throw std::runtime_error("This mode sadly was not implemented yet for multiple files grouped together.");
+            }
+            
+            // For one file in the cluster, the file stem is used with the .hll ending
+            std::filesystem::path path = hll_dir / std::filesystem::path(cluster.first).stem();
+            path += ".hll";
+            std::ofstream hll_fout(path, std::ios::binary);
+            sketch.dump(hll_fout);
+        }
     }
 }
 
@@ -84,9 +120,9 @@ void count_kmers(std::unordered_map<std::string, std::vector<std::string>> const
     auto worker = [&config, &cluster_view, &compute_minimiser, &compute_kmers, &fout] ()
     {
         if (config.disable_minimizers)
-            compute_hashes(cluster_view, compute_kmers, fout);
+            compute_hashes(cluster_view, compute_kmers, fout, config.exclusively_hlls, config.hll_dir, config.sketch_bits);
         else
-            compute_hashes(cluster_view, compute_minimiser, fout);
+            compute_hashes(cluster_view, compute_minimiser, fout, config.exclusively_hlls, config.hll_dir, config.sketch_bits);
     };
 
     // launch threads with worker

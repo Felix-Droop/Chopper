@@ -18,15 +18,24 @@ void initialize_argument_parser(seqan3::argument_parser & parser, count_config &
     parser.info.version = "1.0.0";
 
     parser.add_option(config.data_file, 'f', "data_file", "Give me a filename to a seqinfo file.", seqan3::option_spec::required);
-    parser.add_option(config.output_filename, 'o', "outfile", "An output file name for the binning results.");
+    parser.add_option(config.output_filename, 'o', "outfile", "Filename where the counts should be written to.",
+                     seqan3::option_spec::required);
+    parser.add_option(config.hll_dir, 'd', "hll-dir", 
+                      "A directory path where the HyperLogLog sketches will be stored in files. "
+                      "When this is not given, the sketches will not be stored in files.");
     parser.add_option(config.column_index_to_cluster, 'c', "column-index", "The column index by which to cluster.");
     parser.add_option(config.num_threads, 't', "threads", "Number of threads.");
     parser.add_option(config.k, 'k', "kmer-size", "The kmer size to count minimisers.");
     parser.add_option(config.w, 'w', "window-size", "The window size for minimisers.");
+    parser.add_option(config.sketch_bits, 's', "sketch-bits", 
+                      "The number of bits the HyperLogLog sketch should use to distribute the values into bins.");
     parser.add_flag(config.disable_minimizers, '\0', "disable-minimizers",
                     "Compute pure kmer counts instead of minimizers. Note that selecting -k == -w would not be enough "
                     "because the minimizer hash will still consider the reverse complement and thus differ from a "
                     "pure kmer count.");
+    parser.add_flag(config.exclusively_hlls, 'e', "exclusively-hlls",
+                    "When this is given, only the Hyperloglog sketches are computed and not exact counts. "
+                    "The exact counts are replaced by estimates of the single sketches for every sequence.");
 }
 
 int chopper_count(seqan3::argument_parser & parser)

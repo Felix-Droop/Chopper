@@ -25,16 +25,9 @@ int set_up_and_parse_subparser_split(seqan3::argument_parser & parser, pack_conf
 
     parser.add_option(config.bins, 'b', "technical-bins",
                       "Into how many technical bins do you want your sequence data to be packed?");
-
-    parser.add_option(config.k, 'k', "kmer-size", "The kmer size for the union estimate.");
     
-    parser.add_option(config.hll_cache_dir, 'c', "hll-chache-dir", 
+    parser.add_option(config.hll_dir, 'd', "hll-dir", 
                       "If given, the hll sketches are dumped to this directory and restored when they already exist.");
-
-    parser.add_option(config.sketch_bits, 's', "sketch-bits", 
-                      "The number of bits the HyperLogLog sketch should use to distribute the values into bins.");
-
-    parser.add_option(config.num_threads, 't', "threads", "Number of threads.");
 
     parser.add_option(config.alpha, 'a', "alpha",
                       "The scaling factor to influence the number of merged bins.");
