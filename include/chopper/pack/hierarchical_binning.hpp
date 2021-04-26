@@ -49,7 +49,7 @@ private:
     //!\brief Whether to estimate the union of kmer sets to possibly improve the binning or not.
     bool const union_estimate_wanted;
     //!\brief Whether to do a second sorting of the bins which takes into account similarity or not.
-    bool const resort_bins_wanted;
+    bool const rearrange_bins_wanted;
     //!\brief The maximal cardinality ratio in the clustering intervals.
     double const max_ratio;
 
@@ -77,7 +77,7 @@ public:
         kmer_count_average_per_bin{std::max<size_t>(1u, kmer_count_sum / num_technical_bins)},
         hll_dir{config.hll_dir},
         union_estimate_wanted{config.union_estimate},
-        resort_bins_wanted{config.resort_bins},
+        rearrange_bins_wanted{config.rearrange_bins},
         max_ratio{config.max_ratio},
         output_buff{*data.output_buffer},
         header_buff{*data.header_buffer}
@@ -103,10 +103,7 @@ public:
         {
             user_bin_sequence ub_seq(names, user_bin_kmer_counts, hll_dir);
 
-            if (resort_bins_wanted) 
-            {
-                ub_seq.rearrange_bins(max_ratio);
-            }
+            if (rearrange_bins_wanted) ub_seq.rearrange_bins(max_ratio);
 
             ub_seq.estimate_interval_unions(union_estimates);
         }

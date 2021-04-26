@@ -14,5 +14,5 @@ struct pack_config
     double max_ratio{0.5};
     int aggregate_by_column{-1};
     bool union_estimate{false};
-    bool resort_bins{false};
+    bool rearrange_bins{false};
 };

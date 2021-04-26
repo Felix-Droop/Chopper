@@ -46,8 +46,8 @@ int set_up_and_parse_subparser_split(seqan3::argument_parser & parser, pack_conf
     parser.add_flag(config.union_estimate, 'u', "union-estimate",
                     "Estimate the union of kmer sets to possibly improve the binning.");
     
-    parser.add_flag(config.resort_bins, 'r', "resort-bins",
-                    "Do a second sorting of the bins which takes into account similarity. Only works with -u.");
+    parser.add_flag(config.rearrange_bins, 'r', "rearrange-bins",
+                    "Do a rearrangement of the bins which takes into account similarity. Only works with -u.");
 
     try
     {
