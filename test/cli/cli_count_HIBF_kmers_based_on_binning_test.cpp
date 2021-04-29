@@ -12,6 +12,7 @@ TEST_F(cli_test, small_example)
 {
     seqan3::test::tmp_filename binning_filename{"test.binning"};
     seqan3::test::tmp_filename counts_filename{"kmer_counts.txt"};
+    seqan3::test::tmp_filename output_filename{"out.txt"};
     
     {
         std::ofstream fout{counts_filename.get_path()};
@@ -32,7 +33,8 @@ TEST_F(cli_test, small_example)
                                          "-c", counts_filename.get_path().c_str(),
                                          "-k", "25",
                                          "-t", "1",
-                                         "-f", binning_filename.get_path().c_str());
+                                         "-b", binning_filename.get_path().c_str(),
+                                         "-o", output_filename.get_path().c_str());
 
     std::string expected_stdout
     {
@@ -44,7 +46,12 @@ TEST_F(cli_test, small_example)
         "MERGED_BIN_2\t585\t1170\n"
     };
 
+    std::ifstream output_file{output_filename.get_path()};
+    std::string const output_file_str((std::istreambuf_iterator<char>(output_file)), std::istreambuf_iterator<char>());
+
     // compare results
-    EXPECT_EQ(result.out, expected_stdout);
-    EXPECT_EQ(result.err, std::string{});
+    EXPECT_EQ(expected_stdout, output_file_str);
+
+    // peak memory usage
+    // EXPECT_EQ(result.err, std::string{});
 }

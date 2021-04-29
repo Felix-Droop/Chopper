@@ -14,11 +14,13 @@
 #include <chopper/pack/pack_config.hpp>
 #include <chopper/pack/pack_data.hpp>
 #include <chopper/pack/filenames_data_input.hpp>
+#include <chopper/print_peak_memory_usage.hpp>
 
 struct cmd_arguments
 {
     std::filesystem::path binning_file{};
     std::filesystem::path count_file{};
+    std::filesystem::path output_file{};
     uint8_t k{25};
     size_t threads{std::thread::hardware_concurrency()};
     bool verbose;
@@ -30,11 +32,11 @@ void initialize_argument_parser(seqan3::argument_parser & parser, cmd_arguments 
     parser.info.short_description = "Count unique kmers in bins.";
     parser.info.version = "1.0.0";
 
-    parser.add_option(args.binning_file, 'f', "files", "Give me a file.", seqan3::option_spec::required);
+    parser.add_option(args.binning_file, 'b', "binning", "Give me a binning file.", seqan3::option_spec::required);
     parser.add_option(args.count_file, 'c', "counts", "Give me a kmer counts file.", seqan3::option_spec::required);
-    parser.add_option(args.k, 'k', "kmer-size", "The kmer to count with.");
+    parser.add_option(args.k, 'k', "kmer-size", "The kmer size to count with.");
     parser.add_option(args.threads, 't', "threads", "The number of threads to use.");
-
+    parser.add_option(args.output_file, 'o', "output", "Give me an output file.", seqan3::option_spec::required);
 }
 
 struct file_type_traits : public seqan3::sequence_file_input_default_traits_dna
@@ -44,20 +46,14 @@ struct file_type_traits : public seqan3::sequence_file_input_default_traits_dna
 
 std::mutex mutex;
 
-void print_safely(std::string & s)
-{
-    std::lock_guard<std::mutex> lock(mutex);  // Acquire the mutex
-    std::cout << s;
-} // lock_guard object is destroyed and mutex mu is released
-
 auto print_kmer_content(chopper_pack_record const & record, size_t const num_bins, uint8_t const k, 
-                        std::unordered_map<std::string, size_t> const & counts)
+                        std::unordered_map<std::string, size_t> const & counts, std::ofstream & fout)
 {
     using seq_file_type = seqan3::sequence_file_input<file_type_traits,
                                                       seqan3::fields<seqan3::field::seq>,
                                                       seqan3::type_list<seqan3::format_fasta, seqan3::format_fastq>>;
 
-    std::unordered_set<uint64_t> kmer_occurence{};
+    std::set<uint64_t> kmer_occurence{};
 
     size_t low_lvl_kmer_sum = 0;
     bool is_merged = starts_with(record.bin_name, merged_bin_prefix);
@@ -80,8 +76,9 @@ auto print_kmer_content(chopper_pack_record const & record, size_t const num_bin
         s += std::to_string(low_lvl_kmer_sum) + '\n';
     }
 
-    print_safely(s);
-}
+    std::lock_guard<std::mutex> lock(mutex);  // Acquire the mutex
+    fout << s;
+} // lock_guard object is destroyed and mutex mu is released
 
 int main(int const argc, char const ** argv)
 {
@@ -98,6 +95,11 @@ int main(int const argc, char const ** argv)
         std::cout << "[ERROR] " << ext.what() << "\n";
         return -1;
     }
+
+    size_t const counting_threads = (args.threads <= 1) ? 1 : args.threads - 1;
+
+    // output file
+    std::ofstream fout{args.output_file};
 
     build_config config;
     config.binning_filename = args.binning_file;
@@ -120,7 +122,7 @@ int main(int const argc, char const ** argv)
     }
 
     // setup async execution
-    auto async_buf_records = records | seqan3::views::async_input_buffer(args.threads);    
+    auto async_buf_records = records | seqan3::views::async_input_buffer(counting_threads);    
 
     auto worker = [&] ()
     {
@@ -128,11 +130,11 @@ int main(int const argc, char const ** argv)
         {
             if (starts_with(record.bin_name, split_bin_prefix))
             {
-                print_kmer_content(record, record.bins, args.k, counts);
+                print_kmer_content(record, record.bins, args.k, counts, fout);
             }
             else if (starts_with(record.bin_name, merged_bin_prefix))
             {
-                print_kmer_content(record, 1, args.k, counts); // always one bin in high-level IBF, record.bins is for the low-level IBF
+                print_kmer_content(record, 1, args.k, counts, fout); // always one bin in high-level IBF, record.bins is for the low-level IBF
             }
         }
     };
@@ -140,10 +142,14 @@ int main(int const argc, char const ** argv)
     // launch threads with worker
     std::vector<decltype(std::async(std::launch::async, worker))> handles;
 
-    for (size_t i = 0; i < args.threads; ++i)
+    for (size_t i = 0; i < counting_threads; ++i)
         handles.emplace_back(std::async(std::launch::async, worker));
 
     // wait for all threads to finish
     for (auto && handle : handles)
         handle.wait();
+
+    print_peak_memory_usage();
+
+    return 0;
 }
