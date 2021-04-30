@@ -147,7 +147,7 @@ int main(int const argc, char const ** argv)
 
     // wait for all threads to finish
     for (auto && handle : handles)
-        handle.wait();
+        handle.get();
 
     print_peak_memory_usage();
 

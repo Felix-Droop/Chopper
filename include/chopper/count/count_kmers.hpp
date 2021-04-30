@@ -92,6 +92,12 @@ void count_kmers(std::unordered_map<std::string, std::vector<std::string>> const
     // output file
     std::ofstream fout{config.output_filename};
 
+    // create the hll dir if it doesn't already exist
+    if (!config.hll_dir.empty() && !std::filesystem::exists(config.hll_dir))
+    {
+        std::filesystem::create_directory(config.hll_dir);
+    }
+
     size_t const counting_threads = (config.num_threads <= 1) ? 1 : config.num_threads - 1;
 
     auto compute_minimiser = seqan3::views::minimiser_hash(seqan3::ungapped{config.k}, seqan3::window_size{config.w});
@@ -133,5 +139,5 @@ void count_kmers(std::unordered_map<std::string, std::vector<std::string>> const
 
     // wait for the threads to finish to measure peak memory usage afterwards
     for (auto & handle : handles)
-        handle.wait();
+        handle.get();
 }

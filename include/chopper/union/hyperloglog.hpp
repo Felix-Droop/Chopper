@@ -39,8 +39,11 @@ public:
 
         if (b < 4 || 30 < b) 
         {
-            throw std::invalid_argument("bit width must be in the range [4,30]");
+            std::stringstream ss;
+            ss << "bit width must be in the range [4,30] and it is " << (int)b;
+            throw std::invalid_argument(ss.str().c_str());
         }
+
         M_.shrink_to_fit();
         double alpha;
         switch (m_) {
@@ -91,17 +94,17 @@ public:
         double sum = 0.0;
         for (uint8_t c : M_)
         {
-            sum += 1.0 / (1ull << c);
+            sum += 1.0 / static_cast<double>(1ull << c);
         }
         double estimate = alphaMM_ / sum; 
 
         // use linear counting of zeros for small values
         if (estimate <= 2.5 * m_) 
         {
-            uint64_t zeros = std::count(M_.cbegin(), M_.cend(), 0);
+            uint64_t zeros = std::count(M_.cbegin(), M_.cend(), 0ull);
             if (zeros != 0ull) 
             {
-                estimate = m_ * std::log(static_cast<double>(m_) / zeros);
+                estimate = m_ * std::log(static_cast<double>(m_) / static_cast<double>(zeros));
             }
         } 
         return estimate;
@@ -177,7 +180,7 @@ public:
         os.flush();
         if (os.fail())
         {
-            throw std::runtime_error("Failed to dump");
+            throw std::runtime_error("Failed to dump a HyperLogLog sketch to a file.");
         }
     }
 
@@ -196,7 +199,7 @@ public:
         is.read((char*)&(tempHLL.M_[0]), sizeof(M_[0]) * tempHLL.m_);
         if (is.fail())
         {
-           throw std::runtime_error("Failed to restore");
+           throw std::runtime_error("Failed to restore a HyperLogLog sketch from a file.");
         }       
         swap(tempHLL);
     }

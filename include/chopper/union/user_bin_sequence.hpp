@@ -83,6 +83,11 @@ public:
             std::cerr << "[CHOPPER PACK ERROR] Something went wrong trying to read the HyperLogLog sketches from files:\n"
                       << err.what() << '\n';
         }
+        catch (std::invalid_argument const & err)
+        {
+            std::cerr << "[CHOPPER PACK ERROR] Something went wrong trying to read the HyperLogLog sketches from files:\n"
+                      << err.what() << '\n';
+        }
     }
 
     /*!\brief For all intervals of filenames: estimate the cardinality of the union
