@@ -26,11 +26,7 @@ struct cli_args
 
 struct input_traits : public seqan3::sequence_file_input_default_traits_dna
 {
-    using sequence_alphabet = char;
-
-    using sequence_legal_alphabet = char;
-
-    using sequence_contianer = std::vector<sequence_alphabet>;
+    using sequence_alphabet = seqan3::dna4;
 };
 
 int main(int argc, const char *argv [])
@@ -83,23 +79,13 @@ int main(int argc, const char *argv [])
 
     for (auto && [seq, id] : seq_file)
     {
-        // we have to go C-style here for the HyperLogLog Interface
-        char* c_seq_it = &*seq.begin();
-        char* end = c_seq_it + seq.size();
-
-        while(c_seq_it + args.k <= end)
-        {
-            for (auto & sketch : sketches)
-            {
-                sketch.add(c_seq_it, args.k);
-            }
-            ++c_seq_it;
-        }
-
-        for (uint64_t hash : seq | seqan3::views::char_to<seqan3::dna4>
-                                 | seqan3::views::kmer_hash(seqan3::ungapped{args.k}))
+        for (uint64_t hash : seq | seqan3::views::kmer_hash(seqan3::ungapped{args.k}))
         {
             control.insert(hash);
+            for (auto & sketch : sketches)
+            {
+            sketch.add(reinterpret_cast<char*>(&hash), sizeof(hash));
+            }
         }
 
         for (auto & sketch : sketches)
