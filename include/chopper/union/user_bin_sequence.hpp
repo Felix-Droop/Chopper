@@ -66,8 +66,8 @@ public:
                 std::filesystem::path path = hll_dir / std::filesystem::path(filename).stem();
                 path += ".hll";
 
-                // the sketch bits will be automatically read from the files and 4 is used as placeholder here
-                sketches.emplace_back(4);
+                // the sketch bits will be automatically read from the files
+                sketches.emplace_back();
 
                 std::ifstream hll_fin(path, std::ios::binary);
                 sketches.back().restore(hll_fin);
@@ -77,6 +77,7 @@ public:
         {
             std::cerr << "[CHOPPER PACK ERROR] Something went wrong trying to read the HyperLogLog sketches from files:\n"
                       << fail.what() << '\n';
+
         }
         catch (std::runtime_error const & err)
         {
@@ -100,13 +101,13 @@ public:
         if (invalidated) throw std::runtime_error{"Can only use this instance once."};
 
         estimates.clear();
-        size_t const n = sketches.size();
+        size_t const n = filenames.size();
         estimates.reserve(n);
 
         for (size_t i = 0; i < n; ++i)
         {
             std::vector<uint64_t> & curr_vec = estimates.emplace_back(n - i);
-            curr_vec[0] = sketches[i].estimate();
+            curr_vec[0] = user_bin_kmer_counts[i];
 
             for (size_t j = i + 1; j < n; ++j)
             {
