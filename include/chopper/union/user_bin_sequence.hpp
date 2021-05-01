@@ -93,6 +93,7 @@ public:
     /*!\brief For all intervals of filenames: estimate the cardinality of the union
      * of k-mer sets of all sequences in the files of the interval.
      * estimates[i][j] will be the union of the interval i, ..., i+j
+     * \param[in] num_threads the number of threads to use
      * \param[out] estimates output table
      */
     void estimate_interval_unions(std::vector<std::vector<uint64_t>> & estimates, size_t num_threads)
