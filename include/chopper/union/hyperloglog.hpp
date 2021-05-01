@@ -23,7 +23,7 @@
 #include <emmintrin.h>
 #include <xmmintrin.h>
 
-/** @class HyperLogLog
+/** @class hyperloglog
  *  @brief Implement of 'HyperLogLog' estimate cardinality algorithm
  */
 class hyperloglog 

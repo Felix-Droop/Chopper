@@ -12,6 +12,7 @@ struct pack_config
     std::filesystem::path hll_dir{};
     double alpha{10};
     double max_ratio{0.5};
+    size_t num_threads{std::thread::hardware_concurrency()};
     int aggregate_by_column{-1};
     bool union_estimate{false};
     bool rearrange_bins{false};

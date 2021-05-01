@@ -53,6 +53,8 @@ private:
     bool const rearrange_bins_wanted;
     //!\brief The maximal cardinality ratio in the clustering intervals.
     double const max_ratio;
+    //!\brief The number of threads to use to compute merged HLL sketches.
+    size_t const num_threads;
 
     //!\brief A reference to the output stream to cache the results to.
     std::stringstream & output_buff;
@@ -80,6 +82,7 @@ public:
         union_estimate_wanted{config.union_estimate},
         rearrange_bins_wanted{config.rearrange_bins},
         max_ratio{config.max_ratio},
+        num_threads{config.num_threads},
         output_buff{*data.output_buffer},
         header_buff{*data.header_buffer}
     {
@@ -116,7 +119,7 @@ public:
             std::cerr << "Rearrangement done. Took " << dur.count() << " seconds.\n";
             start = std::chrono::high_resolution_clock::now();
 
-            ub_seq.estimate_interval_unions(union_estimates);
+            ub_seq.estimate_interval_unions(union_estimates, num_threads);
         }
 
         auto dur = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now() - start);

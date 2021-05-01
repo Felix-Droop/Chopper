@@ -6,8 +6,12 @@
 #include <functional>
 #include <cmath>
 #include <fstream>
+#include <future>
+// #inluce <thread>
 
 #include <seqan3/std/filesystem>
+#include <seqan3/std/ranges>
+#include <seqan3/range/views/async_input_buffer.hpp>
 
 #include <chopper/union/hyperloglog.hpp>
 
@@ -91,24 +95,40 @@ public:
      * estimates[i][j] will be the union of the interval i, ..., i+j
      * \param[out] estimates output table
      */
-    void estimate_interval_unions(std::vector<std::vector<uint64_t>> & estimates)
+    void estimate_interval_unions(std::vector<std::vector<uint64_t>> & estimates, size_t num_threads)
     {
         estimates.clear();
         size_t const n = filenames.size();
         estimates.resize(n);
 
-        for (size_t i = 0; i < n; ++i)
+        auto indices = std::views::iota(0u, n)
+                     | seqan3::views::async_input_buffer(num_threads * 5);
+        
+        auto worker = [&] ()
         {
-            estimates[i].resize(n - i);
-            estimates[i][0] = user_bin_kmer_counts[i];
-            hyperloglog temp_hll = sketches[i];
-
-            for (size_t j = i + 1; j < n; ++j)
+            for (auto i : indices)
             {
-                // merge next sketch into the current union
-                estimates[i][j - i] = static_cast<uint64_t>(temp_hll.merge_and_estimate_SSE(sketches[j]));
+                estimates[i].resize(n - i);
+                estimates[i][0] = user_bin_kmer_counts[i];
+                hyperloglog temp_hll = sketches[i];
+
+                for (size_t j = i + 1; j < n; ++j)
+                {
+                    // merge next sketch into the current union
+                    estimates[i][j - i] = static_cast<uint64_t>(temp_hll.merge_and_estimate_SSE(sketches[j]));
+                }
             }
-        }
+        };
+
+        // launch threads with worker
+        std::vector<decltype(std::async(std::launch::async, worker))> handles;
+
+        for (size_t i = 0; i < num_threads; ++i)
+            handles.emplace_back(std::async(std::launch::async, worker));
+
+        // wait for the threads to finish to measure peak memory usage afterwards
+        for (auto & handle : handles)
+            handle.get();
     }
 
     /*!\brief Rearrange filenames, sketches and counts such that similar bins are close to each other
