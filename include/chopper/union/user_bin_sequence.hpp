@@ -33,10 +33,6 @@ private:
     //!\brief HyperLogLog sketches on the k-mer sets of the sequences from the files of filenames.
     std::vector<hyperloglog> sketches;
 
-
-    //!\brief Whether the hlls sketched have been invalidated.
-    bool invalidated;
-
 public:
     /*!\brief A sequence of user bins for which filenames and counts are given. This constructor reads 
               the HyperLogLog sketches from the hll_dir
@@ -48,8 +44,7 @@ public:
                       std::vector<size_t> & user_bin_kmer_counts_,
                       std::filesystem::path const & hll_dir) :
         filenames{filenames_},
-        user_bin_kmer_counts{user_bin_kmer_counts_},
-        invalidated{false}
+        user_bin_kmer_counts{user_bin_kmer_counts_}
     {
         if (hll_dir.empty())
         {
@@ -98,28 +93,22 @@ public:
      */
     void estimate_interval_unions(std::vector<std::vector<uint64_t>> & estimates)
     {
-        if (invalidated) throw std::runtime_error{"Can only use this instance once."};
-
         estimates.clear();
         size_t const n = filenames.size();
-        estimates.reserve(n);
+        estimates.resize(n);
 
         for (size_t i = 0; i < n; ++i)
         {
-            std::vector<uint64_t> & curr_vec = estimates.emplace_back(n - i);
-            curr_vec[0] = user_bin_kmer_counts[i];
+            estimates[i].resize(n - i);
+            estimates[i][0] = user_bin_kmer_counts[i];
+            hyperloglog temp_hll = sketches[i];
 
             for (size_t j = i + 1; j < n; ++j)
             {
                 // merge next sketch into the current union
-                sketches[i].merge(sketches[j]);
-
-                curr_vec[j - i] = static_cast<uint64_t>(sketches[i].estimate());
+                estimates[i][j - i] = static_cast<uint64_t>(temp_hll.merge_and_estimate_SSE(sketches[j]));
             }
         }
-
-        // invalidated, because the merging is in-place and therefore the hlls are all changed
-        invalidated = true;
     }
 
     /*!\brief Rearrange filenames, sketches and counts such that similar bins are close to each other
@@ -215,10 +204,9 @@ private:
                 // we only want one diagonal of the distance matrix
                 if (i < j)
                 {
-                    // this must be a copy, because merge() changes the hll
+                    // this must be a copy, because merging changes the hll sketch
                     hyperloglog temp_hll = sketches[i];
-                    temp_hll.merge(sketches[j]);
-                    double const estimate_ij = temp_hll.estimate();
+                    double const estimate_ij = temp_hll.merge_and_estimate_SSE(sketches[j]);
                     // Jaccard distance estimate
                     double const distance = 2 - (estimates[i] + estimates[j]) / estimate_ij;
                     dist[i].push({distance, j});
@@ -260,10 +248,9 @@ private:
             // merge the two nodes with minimal distance together and insert the new node into the clustering
             clustering[id] = {min_id, neighbor_id, std::move(clustering[min_id].hll)};
             node & new_root = clustering[id];
-            new_root.hll.merge(clustering[neighbor_id].hll);
 
             // insert the new node into dist and update estimates
-            estimates[id] = new_root.hll.estimate();
+            estimates[id] = new_root.hll.merge_and_estimate_SSE(clustering[neighbor_id].hll);
             dist[id];
 
             // delete them from dist
@@ -277,8 +264,7 @@ private:
 
                 // this must be a copy, because merge() changes the hll
                 hyperloglog temp_hll = new_root.hll;
-                temp_hll.merge(clustering[i].hll);
-                double const estimate_ij = temp_hll.estimate();
+                double const estimate_ij = temp_hll.merge_and_estimate_SSE(clustering[i].hll);
                 // Jaccard distance estimate
                 double const distance = 2 - (estimates[i] + estimates[id]) / estimate_ij;
                 prio_q.push({distance, id});

@@ -16,8 +16,12 @@
 #include <stdexcept>
 #include <algorithm>
 #include <iostream> 
-#include <xxh3.h>
 #include <numeric>
+#include <cassert>
+
+#include <xxh3.h>
+#include <emmintrin.h>
+#include <xmmintrin.h>
 
 /** @class HyperLogLog
  *  @brief Implement of 'HyperLogLog' estimate cardinality algorithm
@@ -61,6 +65,7 @@ public:
                 break;
         }
         alphaMM_ = alpha * m_ * m_;
+        alphaMM_float_ = static_cast<float>(alphaMM_);
         // 64 bits where the last b are ones and the rest zeroes
         mask_ = (1 << b) - 1;
     }
@@ -101,8 +106,13 @@ public:
         // use linear counting of zeros for small values
         if (estimate <= 2.5 * m_) 
         {
-            uint64_t zeros = std::count(M_.cbegin(), M_.cend(), 0ull);
-            if (zeros != 0ull) 
+            uint32_t zeros = 0;
+
+            for(size_t i = 0; i < m_; ++i) {
+                if (!M_[i]) ++zeros;
+            }
+
+            if (zeros != 0u) 
             {
                 estimate = m_ * std::log(static_cast<double>(m_) / static_cast<double>(zeros));
             }
@@ -113,25 +123,127 @@ public:
     /**
      * Merges the estimate from 'other' into this object
      * The number of registers in each must be the same.
-     *
+     * 
+     * @param[in] other HyperLogLog instance to be merged
+     */    
+    void merge(hyperloglog const & other)
+    {
+        assert(m_ == other.m_);
+
+        for (size_t i = 0; i < m_; ++i)
+        {
+            if (M_[i] < other.M_[i])
+            {
+                M_[i] = other.M_[i];
+            }
+        }
+    }
+
+    /**
+     * Merges the estimate from 'other' into this object
+     * The number of registers in each must be the same.
+     * This function is implemented using SSE instructions.
+     * 
      * @param[in] other HyperLogLog instance to be merged
      * 
-     * @exception std::invalid_argument number of registers doesn't match.
+     * @return estimated cardinality of the new merged sketch
      */
-    void merge(hyperloglog const & other) 
+    double merge_and_estimate_SSE(hyperloglog const & other) 
     {
-        if (m_ != other.m_) 
+        assert(m_ == other.m_);
+
+        // this is safe, because b_ is at least 4 and therefore M_'s size in bits is a power of 2^4 * 8 = 128
+        __m128i* it = reinterpret_cast<__m128i*>(&*(M_.begin()));
+        const __m128i* other_it = reinterpret_cast< const __m128i*>(&*(other.M_.begin()));
+        __m128i* end = reinterpret_cast<__m128i*>(&*(M_.end()));
+
+        __m128 packed_sum = _mm_set_ps1(0.0);
+
+        for (; it != end; ++it, ++other_it)
         {
-            std::stringstream ss;
-            ss << "number of registers doesn't match: " << m_ << " != " << other.m_;
-            throw std::invalid_argument(ss.str().c_str());
+            // this merges the registers by computing the byte-wise maximum
+            *it = _mm_max_epu8(*it, *other_it);
+            
+            // get pointer to iterate over the single merged registers
+            uint8_t* reg_it = reinterpret_cast<uint8_t*>(it);
+
+            // get floats with two to the power of the value in the merged registers
+            __m128 values = _mm_set_ps(
+                static_cast<float>(((uint64_t)1) << *reg_it),
+                static_cast<float>(((uint64_t)1) << *(reg_it + 1)),
+                static_cast<float>(((uint64_t)1) << *(reg_it + 2)),
+                static_cast<float>(((uint64_t)1) << *(reg_it + 3))
+            );
+
+            // compute their reciprocal
+            values = _mm_rcp_ps(values); 
+
+            // sum up
+            packed_sum = _mm_add_ps(packed_sum, values);
+
+            // and repeat 3 times ...
+            reg_it += 4;
+
+            values = _mm_set_ps(
+                static_cast<float>(((uint64_t)1) << *reg_it),
+                static_cast<float>(((uint64_t)1) << *(reg_it + 1)),
+                static_cast<float>(((uint64_t)1) << *(reg_it + 2)),
+                static_cast<float>(((uint64_t)1) << *(reg_it + 3))
+            );
+
+            values = _mm_rcp_ps(values); 
+            packed_sum = _mm_add_ps(packed_sum, values);
+            reg_it += 4;
+
+            values = _mm_set_ps(
+                static_cast<float>(((uint64_t)1) << *reg_it),
+                static_cast<float>(((uint64_t)1) << *(reg_it + 1)),
+                static_cast<float>(((uint64_t)1) << *(reg_it + 2)),
+                static_cast<float>(((uint64_t)1) << *(reg_it + 3))
+            );
+
+            values = _mm_rcp_ps(values); 
+            packed_sum = _mm_add_ps(packed_sum, values);
+            reg_it += 4;
+
+            values = _mm_set_ps(
+                static_cast<float>(((uint64_t)1) << *reg_it),
+                static_cast<float>(((uint64_t)1) << *(reg_it + 1)),
+                static_cast<float>(((uint64_t)1) << *(reg_it + 2)),
+                static_cast<float>(((uint64_t)1) << *(reg_it + 3))
+            );
+
+            values = _mm_rcp_ps(values); 
+            packed_sum = _mm_add_ps(packed_sum, values);
         }
 
-        std::transform(M_.begin(), M_.end(), other.M_.begin(), 
-            M_.begin(), [] (uint8_t const x, uint8_t const y) 
+        // sum up the 4 values in the packed SSE variable
+        float sum = 0.0;
+        float* sum_it = reinterpret_cast<float*>(&packed_sum);
+        sum += *sum_it;
+        sum += *(sum_it + 1);
+        sum += *(sum_it + 2);
+        sum += *(sum_it + 3);
+
+        // compute first estimate
+        double estimate = alphaMM_float_ / sum; 
+
+        // use linear counting of zeros for small values
+        if (estimate <= 2.5 * m_) 
+        {
+            uint32_t zeros = 0u;
+
+            for(size_t i = 0; i < m_; ++i) {
+                if (!M_[i]) ++zeros;
+            }
+
+            if (zeros != 0u) 
             {
-                return std::max(x, y);
-            });
+                estimate = m_ * std::log(static_cast<double>(m_) / static_cast<double>(zeros));
+            }
+        }
+
+        return estimate;
     }
 
     /**
@@ -161,6 +273,7 @@ public:
     {
         std::swap(mask_, rhs.mask_);
         std::swap(alphaMM_, rhs.alphaMM_);
+        std::swap(alphaMM_float_, rhs.alphaMM_float_);
         std::swap(m_, rhs.m_);
         std::swap(b_, rhs.b_);
         M_.swap(rhs.M_);       
@@ -207,6 +320,7 @@ public:
 private:
     uint64_t mask_; ///< mask for the rank bits
     double alphaMM_; ///< alpha * m^2
+    float alphaMM_float_; ///< alpha * m^2
     uint64_t m_; ///< register size
     uint8_t b_; ///< register bit width
     std::vector<uint8_t> M_; ///< registers

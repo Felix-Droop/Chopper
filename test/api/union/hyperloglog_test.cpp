@@ -99,7 +99,7 @@ TEST(hyperloglog_test, add_and_estimate_large)
     EXPECT_NEAR(sketch.estimate(), control.size(), control.size() * 1.04 / 4);
 }
 
-TEST(hyperloglog_test, merge)
+TEST(hyperloglog_test, merge_and_merge_SSE)
 {
     std::string input_file = DATADIR"small.fa";
     size_t const k = 16;
@@ -108,6 +108,8 @@ TEST(hyperloglog_test, merge)
     size_t const m = 1 << b;
     hyperloglog full_sketch(b);
     hyperloglog merge_sketch(b);
+    hyperloglog merge_SSE_sketch(b);
+
     std::vector<hyperloglog> partial_sketches;
 
     sequence_file_type seq_file{input_file};
@@ -128,16 +130,19 @@ TEST(hyperloglog_test, merge)
             full_sketch.add(c_seq_it, k);
             ++c_seq_it;
         }
-    }
+    }   
 
+    double merge_SSE_estimate;
     // merge all partial sketches into merge_sketch
     for (auto & partial_sketch : partial_sketches)
     {
         merge_sketch.merge(partial_sketch);
+        merge_SSE_estimate = merge_SSE_sketch.merge_and_estimate_SSE(partial_sketch);
     }
 
     // now full_sketch and merged_sketch should be equal
     EXPECT_EQ(full_sketch.estimate(), merge_sketch.estimate());
+    EXPECT_EQ(full_sketch.estimate(), merge_SSE_sketch.estimate());
 }
 
 TEST(hyperloglog_test, dump_and_restore)
