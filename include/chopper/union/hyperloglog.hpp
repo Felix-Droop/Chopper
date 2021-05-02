@@ -11,6 +11,7 @@
  */
 
 #include <vector>
+#include <array>
 #include <cmath>
 #include <sstream>
 #include <stdexcept>
@@ -22,6 +23,17 @@
 #include <xxh3.h>
 #include <emmintrin.h>
 #include <xmmintrin.h>
+
+// constexpr function to precompute values for the indicator function
+constexpr std::array<float, 62> precompute_values()
+{
+    std::array<float, 62> arr{};
+    for (size_t i = 0; i < 62; ++i)
+    {
+        arr[i] = 1.0f / static_cast<float>(((uint64_t)1) << i);
+    }
+    return arr;
+}
 
 /** @class hyperloglog
  *  @brief Implement of 'HyperLogLog' estimate cardinality algorithm
@@ -50,7 +62,8 @@ public:
 
         M_.shrink_to_fit();
         double alpha;
-        switch (m_) {
+        switch (m_) 
+        {
             case 16:
                 alpha = 0.673;
                 break;
@@ -99,7 +112,7 @@ public:
         double sum = 0.0;
         for (uint8_t c : M_)
         {
-            sum += 1.0 / static_cast<double>(1ull << c);
+            sum += exp2_rcp[c];
         }
         double estimate = alphaMM_ / sum; 
 
@@ -167,54 +180,19 @@ public:
             // get pointer to iterate over the single merged registers
             uint8_t* reg_it = reinterpret_cast<uint8_t*>(it);
 
-            // get floats with two to the power of the value in the merged registers
-            __m128 values = _mm_set_ps(
-                static_cast<float>(((uint64_t)1) << *reg_it),
-                static_cast<float>(((uint64_t)1) << *(reg_it + 1)),
-                static_cast<float>(((uint64_t)1) << *(reg_it + 2)),
-                static_cast<float>(((uint64_t)1) << *(reg_it + 3))
-            );
+            // get floats with two to the power of the value in the merged registers and sum up
+            packed_sum = _mm_add_ps(packed_sum, _mm_set_ps(exp2_rcp[*reg_it], exp2_rcp[*(reg_it + 1)], 
+                                                            exp2_rcp[*(reg_it + 2)], exp2_rcp[*(reg_it + 3)]));
 
-            // compute their reciprocal
-            values = _mm_rcp_ps(values); 
+            // repeat 3 times...
+            packed_sum = _mm_add_ps(packed_sum, _mm_set_ps(exp2_rcp[*(reg_it + 4)], exp2_rcp[*(reg_it + 5)], 
+                                                            exp2_rcp[*(reg_it + 6)], exp2_rcp[*(reg_it + 7)]));
 
-            // sum up
-            packed_sum = _mm_add_ps(packed_sum, values);
+            packed_sum = _mm_add_ps(packed_sum, _mm_set_ps(exp2_rcp[*(reg_it + 8)], exp2_rcp[*(reg_it + 9)], 
+                                                            exp2_rcp[*(reg_it + 10)], exp2_rcp[*(reg_it + 11)]));
 
-            // and repeat 3 times ...
-            reg_it += 4;
-
-            values = _mm_set_ps(
-                static_cast<float>(((uint64_t)1) << *reg_it),
-                static_cast<float>(((uint64_t)1) << *(reg_it + 1)),
-                static_cast<float>(((uint64_t)1) << *(reg_it + 2)),
-                static_cast<float>(((uint64_t)1) << *(reg_it + 3))
-            );
-
-            values = _mm_rcp_ps(values); 
-            packed_sum = _mm_add_ps(packed_sum, values);
-            reg_it += 4;
-
-            values = _mm_set_ps(
-                static_cast<float>(((uint64_t)1) << *reg_it),
-                static_cast<float>(((uint64_t)1) << *(reg_it + 1)),
-                static_cast<float>(((uint64_t)1) << *(reg_it + 2)),
-                static_cast<float>(((uint64_t)1) << *(reg_it + 3))
-            );
-
-            values = _mm_rcp_ps(values); 
-            packed_sum = _mm_add_ps(packed_sum, values);
-            reg_it += 4;
-
-            values = _mm_set_ps(
-                static_cast<float>(((uint64_t)1) << *reg_it),
-                static_cast<float>(((uint64_t)1) << *(reg_it + 1)),
-                static_cast<float>(((uint64_t)1) << *(reg_it + 2)),
-                static_cast<float>(((uint64_t)1) << *(reg_it + 3))
-            );
-
-            values = _mm_rcp_ps(values); 
-            packed_sum = _mm_add_ps(packed_sum, values);
+            packed_sum = _mm_add_ps(packed_sum, _mm_set_ps(exp2_rcp[*(reg_it + 12)], exp2_rcp[*(reg_it + 13)], 
+                                                            exp2_rcp[*(reg_it + 14)], exp2_rcp[*(reg_it + 15)]));
         }
 
         // sum up the 4 values in the packed SSE variable
@@ -318,6 +296,8 @@ public:
     }
 
 private:
+    static constexpr std::array<float, 62> exp2_rcp = precompute_values();
+
     uint64_t mask_; ///< mask for the rank bits
     double alphaMM_; ///< alpha * m^2
     float alphaMM_float_; ///< alpha * m^2
