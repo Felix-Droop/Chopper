@@ -116,7 +116,7 @@ public:
                 for (size_t j = i + 1; j < n; ++j)
                 {
                     // merge next sketch into the current union
-                    estimates[i][j - i] = static_cast<uint64_t>(temp_hll.merge_and_estimate_SSE(sketches[j]));
+                    estimates[i][j - i] = static_cast<uint64_t>(temp_hll.merge_and_estimate_SIMD(sketches[j]));
                 }
             }
         };
@@ -227,7 +227,7 @@ private:
                 {
                     // this must be a copy, because merging changes the hll sketch
                     hyperloglog temp_hll = sketches[i];
-                    double const estimate_ij = temp_hll.merge_and_estimate_SSE(sketches[j]);
+                    double const estimate_ij = temp_hll.merge_and_estimate_SIMD(sketches[j]);
                     // Jaccard distance estimate
                     double const distance = 2 - (estimates[i] + estimates[j]) / estimate_ij;
                     dist[i].push({distance, j});
@@ -271,7 +271,7 @@ private:
             node & new_root = clustering[id];
 
             // insert the new node into dist and update estimates
-            estimates[id] = new_root.hll.merge_and_estimate_SSE(clustering[neighbor_id].hll);
+            estimates[id] = new_root.hll.merge_and_estimate_SIMD(clustering[neighbor_id].hll);
             dist[id];
 
             // delete them from dist
@@ -285,7 +285,7 @@ private:
 
                 // this must be a copy, because merge() changes the hll
                 hyperloglog temp_hll = new_root.hll;
-                double const estimate_ij = temp_hll.merge_and_estimate_SSE(clustering[i].hll);
+                double const estimate_ij = temp_hll.merge_and_estimate_SIMD(clustering[i].hll);
                 // Jaccard distance estimate
                 double const distance = 2 - (estimates[i] + estimates[id]) / estimate_ij;
                 prio_q.push({distance, id});

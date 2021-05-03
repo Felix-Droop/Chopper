@@ -14,3 +14,7 @@
 	path = lib/xxHash
 	url = https://github.com/Cyan4973/xxHash.git
 	branch = dev
+[submodule "lib/simde"]
+	path = lib/simde
+	url = https://github.com/simd-everywhere/simde
+	branch = master

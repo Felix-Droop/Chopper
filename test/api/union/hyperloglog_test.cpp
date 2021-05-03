@@ -61,7 +61,7 @@ TEST(hyperloglog_test, add_and_estimate_small)
     //          = 0.673 * 16 * 16 / (89/8) = 15,48...
 
     // this still is in the range of small value corrections (< 2.5 * 16)
-    // m * log(#zeros / m) = 16 * log(16/9) = 9.205826318 (with calculator)
+    // m * log(m / #zeros) = 16 * log(16/9) = 9.205826318 (with calculator)
 
     EXPECT_NEAR(sketch.estimate(), 9.205826318, 0.0000001);
 }
@@ -99,16 +99,16 @@ TEST(hyperloglog_test, add_and_estimate_large)
     EXPECT_NEAR(sketch.estimate(), control.size(), control.size() * 1.04 / 4);
 }
 
-TEST(hyperloglog_test, merge_and_merge_SSE)
+TEST(hyperloglog_test, merge_and_merge_SIMD)
 {
     std::string input_file = DATADIR"small.fa";
     size_t const k = 16;
 
-    size_t const b = 4;
+    size_t const b = 5;
     size_t const m = 1 << b;
     hyperloglog full_sketch(b);
     hyperloglog merge_sketch(b);
-    hyperloglog merge_SSE_sketch(b);
+    hyperloglog merge_SIMD_sketch(b);
 
     std::vector<hyperloglog> partial_sketches;
 
@@ -132,17 +132,17 @@ TEST(hyperloglog_test, merge_and_merge_SSE)
         }
     }   
 
-    double merge_SSE_estimate;
+    double merge_SIMD_estimate;
     // merge all partial sketches into merge_sketch
     for (auto & partial_sketch : partial_sketches)
     {
         merge_sketch.merge(partial_sketch);
-        merge_SSE_estimate = merge_SSE_sketch.merge_and_estimate_SSE(partial_sketch);
+        merge_SIMD_estimate = merge_SIMD_sketch.merge_and_estimate_SIMD(partial_sketch);
     }
 
     // now full_sketch and merged_sketch should be equal
     EXPECT_EQ(full_sketch.estimate(), merge_sketch.estimate());
-    EXPECT_EQ(full_sketch.estimate(), merge_SSE_sketch.estimate());
+    EXPECT_EQ(full_sketch.estimate(), merge_SIMD_sketch.estimate());
 }
 
 TEST(hyperloglog_test, dump_and_restore)

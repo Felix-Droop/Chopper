@@ -8,9 +8,11 @@ if (NOT CMAKE_CXX_FLAGS)
     set (CMAKE_CXX_FLAGS "-std=c++17 -fconcepts")
 endif ()
 
-set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -msse2 -msse")
-
 ## BUILD
+
+# add recommended compiler flags for SIMDe
+set (CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG -fopenmp-simd -DSIMDE_ENABLE_OPENMP -mavx -mavx2 -msse -msse2" CACHE STRING 
+"recommended compiler flags for SIMDe" FORCE)
 
 # Make Release default build type
 if (NOT CMAKE_BUILD_TYPE)
@@ -40,7 +42,7 @@ set(CMAKE_PREFIX_PATH "${CMAKE_SOURCE_DIR}/lib/seqan/util/cmake")
 set(CMAKE_INCLUDE_PATH "${CMAKE_SOURCE_DIR}/lib/seqan/include/")
 include (${CMAKE_SOURCE_DIR}/lib/seqan/util/cmake/seqan-config.cmake)
 
-# Dependecy: xxHash
+# Dependency: xxHash
 # We don't need the command line application
 set(XXHASH_BUILD_XXHSUM OFF)
 add_subdirectory("${CMAKE_SOURCE_DIR}/lib/xxHash/cmake_unofficial" "${CMAKE_BINARY_DIR}/lib/xxHash/" EXCLUDE_FROM_ALL)
