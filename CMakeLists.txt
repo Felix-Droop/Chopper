@@ -11,7 +11,8 @@ endif ()
 ## BUILD
 
 # add recommended compiler flags for SIMDe
-set (CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG -fopenmp-simd -DSIMDE_ENABLE_OPENMP -mavx -mavx2 -msse -msse2" CACHE STRING 
+# set (CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG  -mavx -mavx2 -msse -msse2" CACHE STRING 
+set (CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG -fopenmp-simd -DSIMDE_ENABLE_OPENMP -march=native" CACHE STRING 
 "recommended compiler flags for SIMDe" FORCE)
 
 # Make Release default build type
