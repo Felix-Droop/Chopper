@@ -13,7 +13,7 @@
 #include <seqan3/range/views/async_input_buffer.hpp>
 
 #include <chopper/union/hyperloglog.hpp>
-#include <chopper/union/parallel_distance_matrix.hpp>
+#include <chopper/union/distance_matrix.hpp>
 #include <chopper/union/clustering_node.hpp>
 
 struct user_bin_sequence
@@ -125,9 +125,8 @@ public:
 
     /*!\brief Rearrange filenames, sketches and counts such that similar bins are close to each other
      * \param[in] max_ratio the maximal cardinality ratio in the clustering intervals (must be <= 1 and >= 0)
-     * \param[in] num_threads the number of threads to use
      */
-    void rearrange_bins(double const max_ratio, size_t num_threads)
+    void rearrange_bins(double const max_ratio)
     {
         std::vector<size_t> permutation;
 
@@ -140,7 +139,7 @@ public:
             if (last == filenames.size() || user_bin_kmer_counts[first] * max_ratio > user_bin_kmer_counts[last])
             {
                 // if this is not the first group, we want one bin overlap
-                cluster_bins(permutation, first, last, num_threads);
+                cluster_bins(permutation, first, last);
                 first = last;
             }
             ++last;
@@ -167,18 +166,15 @@ private:
     /*!\brief Perform an agglomerative clustering variant on the index range [first:last)
      * \param[in] first id of the first cluster of the interval
      * \param[in] last id of the last cluster of the interval plus one
-     * \param[in] num_threads the number of threads to use
      * \param[out] permutation append the new order to this
-     * 
      */
     void cluster_bins(std::vector<size_t> & permutation,
                       size_t first,
-                      size_t last,
-                      size_t num_threads)
+                      size_t last)
     {
         std::unordered_map<size_t, clustering_node> clustering;
         std::unordered_map<size_t, double> estimates;
-        parallel_distance_matrix dist(clustering, estimates, num_threads);
+        distance_matrix dist(clustering, estimates);
 
         size_t const none = std::numeric_limits<size_t>::max();
 

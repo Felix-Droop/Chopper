@@ -10,7 +10,7 @@
 #include <chopper/union/hyperloglog.hpp>
 #include <chopper/union/clustering_node.hpp>
 
-class parallel_distance_matrix
+class distance_matrix
 {
 private:
     //!\brief element of the second priority queue layer of the distance matrix
@@ -44,27 +44,16 @@ private:
     //!\brief read-only reference to already computes estimates of cardinalities of clusters
     std::unordered_map<size_t, double> const & estimates;
 
-    //!\brief number of threads to use in parallel operations
-    size_t num_threads;
-
-    //!\brief execution handler and thread pool for parallel operations
-    // parallel_execution_handler exec_handler 
-
 public:
     /*!\brief Distance matrix for a hierarchical clustering algorithm
-     * that computes the expensive operations in parallel
      *
      * \param[in] clustering_ read-only reference to the clustering tree
      * \param[in] estimates_ read-only reference to already computes estimates of cardinalities
-     * \param[in] num_threads_ number of threads to use in parallel operations
      */
-    parallel_distance_matrix(std::unordered_map<size_t, clustering_node> const & clustering_,
-                             std::unordered_map<size_t, double> const & estimates_,
-                             size_t num_threads_) :
+    distance_matrix(std::unordered_map<size_t, clustering_node> const & clustering_,
+                             std::unordered_map<size_t, double> const & estimates_) :
         clustering{clustering_},
-        estimates{estimates_},
-        num_threads{num_threads_}
-        // exec_handler{num_threads}
+        estimates{estimates_}
     {}
 
     /*!\brief Initialize the pairwise jaccard distances in the distance matrix 
@@ -72,19 +61,10 @@ public:
      */
     void initialize(std::vector<hyperloglog> const & sketches)
     {
-        // initialize empty priority queues on main thread
-        for (auto & [i, i_node] : clustering)
-        {
-            dist[i];
-        }
-
-        // OUTER LOOP COULD BE PARALLELIZED WITH THREADS (LIKELY PART OF THE MAIN BOTTLENECK)
-        // ELEMENTS ARE CHANGED -> IS IT SAFE???
-        // DEPENDING ON i MORE OR LESS WORK IN THE INNER LOOP -> DYNAMIC SCHEDULING NEEDED
-
         for (auto & [i, i_node] : clustering)
         {
             // we want an empty priority queue for every item
+            dist[i];
             for (auto & [j, j_node] : clustering)
             {
                 // we only want one diagonal of the distance matrix
@@ -106,10 +86,6 @@ public:
     {
         size_t min_id = get_remaining_cluster_id();
         double min_dist = std::numeric_limits<double>::max();
-
-        // THIS LOOP COULD BE PARALLELIZED WITH THREADS (LIKELY NOT THE MAIN BOTTLENECK)
-        // ONLY CONST OPERATIONS > SAFE
-        // EVERY ITERATION HAS CONSTANT AMOUNT OF WORK -> STATIC (CHUNKED) SCHEDULING POSSIBLE
 
         // find the two nodes with the minimal distance
         for (auto & [i, prio_q] : dist)
@@ -145,10 +121,6 @@ public:
 
         // initialize priority queue for the new cluster 
         dist[new_id];
-
-        // THIS COULD BE PARALLELIZED WITH THREADS (LIKELY PART OF THE MAIN BOTTLENECK)
-        // ELEMENTS ARE CHANGED -> IS IT SAFE???
-        // DEPENDING ON i MORE OR LESS WORK IN THE INNER LOOP -> DYNAMIC SCHEDULING NEEDED
 
         // update distances
         for (auto & [i, prio_q] : dist)

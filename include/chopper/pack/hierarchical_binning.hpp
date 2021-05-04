@@ -113,7 +113,7 @@ public:
             std::cerr << "Reading HLL sketches done. Took " << dur.count() << " seconds.\n";
             start = std::chrono::high_resolution_clock::now();
             
-            if (rearrange_bins_wanted) ub_seq.rearrange_bins(max_ratio, num_threads);
+            if (rearrange_bins_wanted) ub_seq.rearrange_bins(max_ratio);
             
             dur = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now() - start);
             std::cerr << "Rearrangement done. Took " << dur.count() << " seconds.\n";
