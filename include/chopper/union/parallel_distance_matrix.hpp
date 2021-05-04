@@ -127,25 +127,29 @@ public:
         return std::make_tuple(min_id, dist[min_id].top().id);
     }
 
-    //!\brief Delete the two clusters with the given ids
-    void delete_pair(size_t id_0, size_t id_1)
-    {
-        dist.extract(id_0);
-        dist.extract(id_1);
-    }
-
-    /*!\brief Initialize the pairwise jaccard distances in the distance matrix 
-     * \param[in] sketches HyperLogLog sketches used to estimate the distances
+    /*!\brief Update the distance matrix.
+     * 
+     * Delete the two old clusters with the given ids.
+     * Insert a new cluster with the given ids.
+     * Compute distances from previously existing clusters to the new one.
+     * 
+     * \param[in] new_id id of the new cluster
+     * \param[in] old_id_0 id of the first old cluster
+     * \param[in] old_id_1 id of the second old cluster
      */
-    void update(size_t new_id)
+    void update(size_t new_id, size_t old_id_0, size_t old_id_1)
     {
+        // remove old clusters
+        dist.extract(old_id_0);
+        dist.extract(old_id_1);
+
         // initialize priority queue for the new cluster 
         dist[new_id];
 
         // THIS COULD BE PARALLELIZED WITH THREADS (LIKELY PART OF THE MAIN BOTTLENECK)
         // ELEMENTS ARE CHANGED -> IS IT SAFE???
         // DEPENDING ON i MORE OR LESS WORK IN THE INNER LOOP -> DYNAMIC SCHEDULING NEEDED
-        
+
         // update distances
         for (auto & [i, prio_q] : dist)
         {

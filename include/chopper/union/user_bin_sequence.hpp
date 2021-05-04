@@ -125,6 +125,7 @@ public:
 
     /*!\brief Rearrange filenames, sketches and counts such that similar bins are close to each other
      * \param[in] max_ratio the maximal cardinality ratio in the clustering intervals (must be <= 1 and >= 0)
+     * \param[in] num_threads the number of threads to use
      */
     void rearrange_bins(double const max_ratio, size_t num_threads)
     {
@@ -164,9 +165,11 @@ public:
 
 private:
     /*!\brief Perform an agglomerative clustering variant on the index range [first:last)
-     * \param[in] first
-     * \param[in] last
+     * \param[in] first id of the first cluster of the interval
+     * \param[in] last id of the last cluster of the interval plus one
+     * \param[in] num_threads the number of threads to use
      * \param[out] permutation append the new order to this
+     * 
      */
     void cluster_bins(std::vector<size_t> & permutation,
                       size_t first,
@@ -210,11 +213,8 @@ private:
             clustering[id] = {min_id, neighbor_id, std::move(clustering[min_id].hll)};
             estimates[id] = clustering[id].hll.merge_and_estimate_SIMD(clustering[neighbor_id].hll);
 
-            // delete merged clusters from dist
-            dist.delete_pair(min_id, neighbor_id);
-
             // insert new cluster and update distances 
-            dist.update(id);
+            dist.update(id, min_id, neighbor_id);
 
             ++id;
         }
