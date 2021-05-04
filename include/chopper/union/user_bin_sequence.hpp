@@ -2,32 +2,23 @@
 
 #include <vector>
 #include <unordered_map>
-#include <queue>
-#include <functional>
 #include <cmath>
 #include <fstream>
 #include <future>
-// #inluce <thread>
+#include <tuple>
+#include <limits>
 
 #include <seqan3/std/filesystem>
 #include <seqan3/std/ranges>
 #include <seqan3/range/views/async_input_buffer.hpp>
 
 #include <chopper/union/hyperloglog.hpp>
+#include <chopper/union/parallel_distance_matrix.hpp>
+#include <chopper/union/clustering_node.hpp>
 
 struct user_bin_sequence
 {
 private:
-    //!\brief node for the clustering
-    struct node 
-    {
-        // children in the tree
-        size_t left;
-        size_t right;
-        // hll sketch of the union if the node is still a root
-        hyperloglog hll;
-    };
-
     //!\brief A reference to the filenames of the user input sequences.
     std::vector<std::string> & filenames;
     
@@ -127,7 +118,7 @@ public:
         for (size_t i = 0; i < num_threads; ++i)
             handles.emplace_back(std::async(std::launch::async, worker));
 
-        // wait for the threads to finish to measure peak memory usage afterwards
+        // wait for the threads to finish
         for (auto & handle : handles)
             handle.get();
     }
@@ -135,7 +126,7 @@ public:
     /*!\brief Rearrange filenames, sketches and counts such that similar bins are close to each other
      * \param[in] max_ratio the maximal cardinality ratio in the clustering intervals (must be <= 1 and >= 0)
      */
-    void rearrange_bins(double const max_ratio)
+    void rearrange_bins(double const max_ratio, size_t num_threads)
     {
         std::vector<size_t> permutation;
 
@@ -148,7 +139,7 @@ public:
             if (last == filenames.size() || user_bin_kmer_counts[first] * max_ratio > user_bin_kmer_counts[last])
             {
                 // if this is not the first group, we want one bin overlap
-                cluster_bins(permutation, first, last);
+                cluster_bins(permutation, first, last, num_threads);
                 first = last;
             }
             ++last;
@@ -179,25 +170,12 @@ private:
      */
     void cluster_bins(std::vector<size_t> & permutation,
                       size_t first,
-                      size_t last)
+                      size_t last,
+                      size_t num_threads)
     {
-        struct neighbor
-        {
-            double dist;
-            size_t id;
-
-            bool operator>(neighbor const & other) const
-            {
-                return dist > other.dist;
-            }
-        };
-
-        std::unordered_map<size_t, node> clustering;
+        std::unordered_map<size_t, clustering_node> clustering;
         std::unordered_map<size_t, double> estimates;
-
-        // store distances in a heap to improve running time
-        using prio_queue = std::priority_queue<neighbor, std::vector<neighbor>, std::greater<neighbor>>;
-        std::unordered_map<size_t, prio_queue> dist;
+        parallel_distance_matrix dist(clustering, estimates, num_threads);
 
         size_t const none = std::numeric_limits<size_t>::max();
 
@@ -216,26 +194,9 @@ private:
             clustering[previous_rightmost] = {none, none, sketches[previous_rightmost]};
             estimates[previous_rightmost] = sketches[previous_rightmost].estimate();
         }
-
-        // initialize dist
-        for (auto & [i, i_node] : clustering)
-        {
-            for (auto & [j, j_node] : clustering)
-            {
-                // we only want one diagonal of the distance matrix
-                if (i < j)
-                {
-                    // this must be a copy, because merging changes the hll sketch
-                    hyperloglog temp_hll = sketches[i];
-                    double const estimate_ij = temp_hll.merge_and_estimate_SIMD(sketches[j]);
-                    // Jaccard distance estimate
-                    double const distance = 2 - (estimates[i] + estimates[j]) / estimate_ij;
-                    dist[i].push({distance, j});
-                }
-                // we want an empty priority queue for every item
-                dist[i];
-            }
-        }
+        
+        // initalize distance matrix
+        dist.initialize(sketches);
 
         // ids of new nodes start at last's value
         size_t id = last;
@@ -243,64 +204,22 @@ private:
         // keep merging nodes until we have a complete tree
         while (dist.size() > 1)
         {
-            size_t min_id = none;
-            double min_dist = std::numeric_limits<double>::max();
+            auto [min_id, neighbor_id] = dist.get_min_pair();
 
-            // find the two nodes with the minimal distance
-            for (auto & [i, prio_q] : dist)
-            {
-                if (prio_q.empty()) continue;
-
-                neighbor const & curr = prio_q.top();
-                if (curr.dist < min_dist)
-                {
-                    min_dist = curr.dist;
-                    min_id = i;
-                }
-            }
-            
-            if (min_id == none)
-            {
-                throw std::runtime_error{"Something went wrong with the HyperLogLog Jaccard distance estimates."};
-            }
-
-            size_t neighbor_id = dist[min_id].top().id;
-
-            // merge the two nodes with minimal distance together and insert the new node into the clustering
+            // merge the two nodes with minimal distance together insert the new node into the clustering
             clustering[id] = {min_id, neighbor_id, std::move(clustering[min_id].hll)};
-            node & new_root = clustering[id];
+            estimates[id] = clustering[id].hll.merge_and_estimate_SIMD(clustering[neighbor_id].hll);
 
-            // insert the new node into dist and update estimates
-            estimates[id] = new_root.hll.merge_and_estimate_SIMD(clustering[neighbor_id].hll);
-            dist[id];
+            // delete merged clusters from dist
+            dist.delete_pair(min_id, neighbor_id);
 
-            // delete them from dist
-            dist.extract(min_id);
-            dist.extract(neighbor_id);
-
-            // update distances
-            for (auto & [i, prio_q] : dist)
-            {
-                if (i == id) continue;
-
-                // this must be a copy, because merge() changes the hll
-                hyperloglog temp_hll = new_root.hll;
-                double const estimate_ij = temp_hll.merge_and_estimate_SIMD(clustering[i].hll);
-                // Jaccard distance estimate
-                double const distance = 2 - (estimates[i] + estimates[id]) / estimate_ij;
-                prio_q.push({distance, id});
-
-                // make sure the closest neighbor is not yet deleted (this is a lazy update)
-                while (dist.find(prio_q.top().id) == dist.end() && !prio_q.empty())
-                {
-                    prio_q.pop();
-                }
-            }
+            // insert new cluster and update distances 
+            dist.update(id);
 
             ++id;
         }
 
-        size_t final_root = dist.begin()->first;
+        size_t final_root = dist.get_remaining_cluster_id();
 
         // rotate the previous rightmost to the left so that it has the correct place in the permutation
         if (first != 0)
@@ -319,13 +238,13 @@ private:
      * 
      * \return whether previous rightmost was in the subtree rooted at id
      */
-    bool rotate(std::unordered_map<size_t, node> & clustering,
+    bool rotate(std::unordered_map<size_t, clustering_node> & clustering,
                 size_t const previous_rightmost,
                 size_t const id)
     {
         if (id == previous_rightmost) return true;
         
-        node & curr = clustering.at(id);
+        clustering_node & curr = clustering.at(id);
         if (curr.left == std::numeric_limits<size_t>::max())
         {
             return false;
@@ -353,12 +272,12 @@ private:
      * \param[in] id the id of the current node
      * \param[in] previous_rightmost the id of the node on the left which should be ignored
      */
-    void trace(std::unordered_map<size_t, node> const & clustering,
+    void trace(std::unordered_map<size_t, clustering_node> const & clustering,
                std::vector<size_t> & permutation,
                size_t const id,
                size_t const previous_rightmost)
     {
-        node const & curr = clustering.at(id);
+        clustering_node const & curr = clustering.at(id);
         
         if (curr.left == std::numeric_limits<size_t>::max())
         {
