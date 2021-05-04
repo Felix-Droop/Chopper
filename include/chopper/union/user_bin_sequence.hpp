@@ -1,7 +1,6 @@
 #pragma once
 
 #include <vector>
-#include <unordered_map>
 #include <cmath>
 #include <fstream>
 #include <future>
@@ -15,6 +14,8 @@
 #include <chopper/union/hyperloglog.hpp>
 #include <chopper/union/distance_matrix.hpp>
 #include <chopper/union/clustering_node.hpp>
+
+#include <robin_hood.h>
 
 struct user_bin_sequence
 {
@@ -172,8 +173,8 @@ private:
                       size_t first,
                       size_t last)
     {
-        std::unordered_map<size_t, clustering_node> clustering;
-        std::unordered_map<size_t, double> estimates;
+        robin_hood::unordered_map<size_t, clustering_node> clustering;
+        robin_hood::unordered_map<size_t, double> estimates;
         distance_matrix dist(clustering, estimates);
 
         size_t const none = std::numeric_limits<size_t>::max();
@@ -234,7 +235,7 @@ private:
      * 
      * \return whether previous rightmost was in the subtree rooted at id
      */
-    bool rotate(std::unordered_map<size_t, clustering_node> & clustering,
+    bool rotate(robin_hood::unordered_map<size_t, clustering_node> & clustering,
                 size_t const previous_rightmost,
                 size_t const id)
     {
@@ -268,7 +269,7 @@ private:
      * \param[in] id the id of the current node
      * \param[in] previous_rightmost the id of the node on the left which should be ignored
      */
-    void trace(std::unordered_map<size_t, clustering_node> const & clustering,
+    void trace(robin_hood::unordered_map<size_t, clustering_node> const & clustering,
                std::vector<size_t> & permutation,
                size_t const id,
                size_t const previous_rightmost)

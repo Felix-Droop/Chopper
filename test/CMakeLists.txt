@@ -47,6 +47,8 @@ macro (add_app_test test_filename test_alternative)
     target_include_directories ("${target}" PUBLIC ${CMAKE_SOURCE_DIR}/lib/lemon/include)
     target_include_directories ("${target}" PUBLIC ${CMAKE_SOURCE_DIR}/lib/seqan3/test/include)
     target_include_directories ("${target}" PUBLIC ${CMAKE_SOURCE_DIR}/lib/simde/simde)
+    target_include_directories ("${target}" PUBLIC ${CMAKE_SOURCE_DIR}/lib/robin_hood/src/include)
+
     target_compile_definitions ("${target}" PUBLIC ${SEQAN_DEFINITIONS})
     target_compile_options ("${target}" PUBLIC ${SEQAN_CXX_FLAGS_LIST})
     target_include_directories ("${target}" PUBLIC "${SEQAN_INCLUDE_DIRS}")

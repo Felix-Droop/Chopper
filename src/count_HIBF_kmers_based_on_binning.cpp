@@ -3,7 +3,6 @@
 #include <future>
 #include <sstream>
 #include <string> 
-#include <unordered_map>
 
 #include <seqan3/argument_parser/all.hpp>
 #include <seqan3/range/views/kmer_hash.hpp>
@@ -15,6 +14,8 @@
 #include <chopper/pack/pack_data.hpp>
 #include <chopper/pack/filenames_data_input.hpp>
 #include <chopper/print_peak_memory_usage.hpp>
+
+#include <robin_hood.h>
 
 struct cmd_arguments
 {
@@ -47,13 +48,13 @@ struct file_type_traits : public seqan3::sequence_file_input_default_traits_dna
 std::mutex mutex;
 
 auto print_kmer_content(chopper_pack_record const & record, size_t const num_bins, uint8_t const k, 
-                        std::unordered_map<std::string, size_t> const & counts, std::ofstream & fout)
+                        robin_hood::unordered_map<std::string, size_t> const & counts, std::ofstream & fout)
 {
     using seq_file_type = seqan3::sequence_file_input<file_type_traits,
                                                       seqan3::fields<seqan3::field::seq>,
                                                       seqan3::type_list<seqan3::format_fasta, seqan3::format_fastq>>;
 
-    std::set<uint64_t> kmer_occurence{};
+    robin_hood::unordered_set<uint64_t> kmer_occurence{};
 
     size_t low_lvl_kmer_sum = 0;
     bool is_merged = starts_with(record.bin_name, merged_bin_prefix);
@@ -113,7 +114,7 @@ int main(int const argc, char const ** argv)
     pack_data data;
     read_filename_data_file(data, p_config);
 
-    std::unordered_map<std::string, size_t> counts; 
+    robin_hood::unordered_map<std::string, size_t> counts; 
 
     // make a simple lookup table for kmer counts
     for (size_t i = 0; i < data.filenames.size(); ++i)

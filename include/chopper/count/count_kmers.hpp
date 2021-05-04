@@ -1,7 +1,6 @@
 #include <future>
 #include <fstream>
 #include <thread>
-#include <unordered_map>
 
 #define SEQAN_HAS_ZLIB 1
 #define SEQAN3_HAS_ZLIB 1
@@ -14,6 +13,8 @@
 #include <seqan3/std/filesystem>
 
 #include <chopper/union/hyperloglog.hpp>
+
+#include <robin_hood.h>
 
 std::mutex mu;
 
@@ -46,7 +47,7 @@ void compute_hashes(cluster_view_type && cluster_view, compute_view_type && comp
 {
     for (auto && [cluster, sequence_vector] : cluster_view)
     {
-        std::set<uint64_t> result;
+        robin_hood::unordered_set<uint64_t> result;
         hyperloglog sketch(sketch_bits);
 
         for (auto && seq : sequence_vector)

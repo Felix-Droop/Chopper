@@ -1,7 +1,6 @@
 #pragma once
 
 #include <vector>
-#include <unordered_map>
 #include <queue>
 #include <functional>
 #include <tuple>
@@ -9,6 +8,8 @@
 
 #include <chopper/union/hyperloglog.hpp>
 #include <chopper/union/clustering_node.hpp>
+
+#include <robin_hood.h>
 
 class distance_matrix
 {
@@ -36,13 +37,13 @@ private:
      * These neighbors are themselves clusters with an id and store a distance to the 
      * cluster of the first layer.
      */
-    std::unordered_map<size_t, prio_queue> dist;
+    robin_hood::unordered_map<size_t, prio_queue> dist;
 
     //!\brief read-only reference to the clustering tree
-    std::unordered_map<size_t, clustering_node> const & clustering;
+    robin_hood::unordered_map<size_t, clustering_node> const & clustering;
     
     //!\brief read-only reference to already computes estimates of cardinalities of clusters
-    std::unordered_map<size_t, double> const & estimates;
+    robin_hood::unordered_map<size_t, double> const & estimates;
 
 public:
     /*!\brief Distance matrix for a hierarchical clustering algorithm
@@ -50,8 +51,8 @@ public:
      * \param[in] clustering_ read-only reference to the clustering tree
      * \param[in] estimates_ read-only reference to already computes estimates of cardinalities
      */
-    distance_matrix(std::unordered_map<size_t, clustering_node> const & clustering_,
-                             std::unordered_map<size_t, double> const & estimates_) :
+    distance_matrix(robin_hood::unordered_map<size_t, clustering_node> const & clustering_,
+                    robin_hood::unordered_map<size_t, double> const & estimates_) :
         clustering{clustering_},
         estimates{estimates_}
     {}
@@ -100,7 +101,7 @@ public:
             }
         }
 
-        return std::make_tuple(min_id, dist[min_id].top().id);
+        return std::make_tuple(min_id, dist.at(min_id).top().id);
     }
 
     /*!\brief Update the distance matrix.
@@ -116,8 +117,8 @@ public:
     void update(size_t new_id, size_t old_id_0, size_t old_id_1)
     {
         // remove old clusters
-        dist.extract(old_id_0);
-        dist.extract(old_id_1);
+        dist.erase(old_id_0);
+        dist.erase(old_id_1);
 
         // initialize priority queue for the new cluster 
         dist[new_id];
@@ -135,7 +136,7 @@ public:
             prio_q.push({distance, new_id});
 
             // make sure the closest neighbor is not yet deleted (this is a lazy update)
-            while (dist.find(prio_q.top().id) == dist.end() && !prio_q.empty())
+            while (!dist.contains(prio_q.top().id) && !prio_q.empty())
             {
                 prio_q.pop();
             }
