@@ -88,7 +88,7 @@ public:
      * \param[in] num_threads the number of threads to use
      * \param[out] estimates output table
      */
-    void estimate_interval_unions(std::vector<std::vector<uint64_t>> & estimates, size_t num_threads)
+    void estimate_interval_unions(std::vector<std::vector<uint64_t>> & estimates, size_t const num_threads)
     {
         estimates.clear();
         size_t const n = filenames.size();
@@ -126,8 +126,9 @@ public:
 
     /*!\brief Rearrange filenames, sketches and counts such that similar bins are close to each other
      * \param[in] max_ratio the maximal cardinality ratio in the clustering intervals (must be <= 1 and >= 0)
+     * \param[in] num_threads the number of threads to use
      */
-    void rearrange_bins(double const max_ratio)
+    void rearrange_bins(double const max_ratio, size_t const num_threads)
     {
         std::vector<size_t> permutation;
 
@@ -140,7 +141,7 @@ public:
             if (last == filenames.size() || user_bin_kmer_counts[first] * max_ratio > user_bin_kmer_counts[last])
             {
                 // if this is not the first group, we want one bin overlap
-                cluster_bins(permutation, first, last);
+                cluster_bins(permutation, first, last, num_threads);
                 first = last;
             }
             ++last;
@@ -167,15 +168,17 @@ private:
     /*!\brief Perform an agglomerative clustering variant on the index range [first:last)
      * \param[in] first id of the first cluster of the interval
      * \param[in] last id of the last cluster of the interval plus one
+     * \param[in] num_threads the number of threads to use
      * \param[out] permutation append the new order to this
      */
     void cluster_bins(std::vector<size_t> & permutation,
-                      size_t first,
-                      size_t last)
+                      size_t const first,
+                      size_t const last,
+                      size_t const num_threads)
     {
         robin_hood::unordered_map<size_t, clustering_node> clustering;
         robin_hood::unordered_map<size_t, double> estimates;
-        distance_matrix dist(clustering, estimates);
+        distance_matrix dist(clustering, estimates, num_threads);
 
         size_t const none = std::numeric_limits<size_t>::max();
 
@@ -196,24 +199,22 @@ private:
         }
         
         // initalize distance matrix
-        dist.initialize(sketches);
-
-        // ids of new nodes start at last's value
-        size_t id = last;
+        dist.initialize();
 
         // keep merging nodes until we have a complete tree
-        while (dist.size() > 1)
+        for (size_t id = last; dist.size() > 1; ++id)
         {
             auto [min_id, neighbor_id] = dist.get_min_pair();
-
+            
             // merge the two nodes with minimal distance together insert the new node into the clustering
-            clustering[id] = {min_id, neighbor_id, std::move(clustering[min_id].hll)};
-            estimates[id] = clustering[id].hll.merge_and_estimate_SIMD(clustering[neighbor_id].hll);
+            clustering[id] = {min_id, neighbor_id, std::move(clustering.at(min_id).hll)};
+            estimates[id] = clustering.at(id).hll.merge_and_estimate_SIMD(clustering.at(neighbor_id).hll);
 
             // insert new cluster and update distances 
             dist.update(id, min_id, neighbor_id);
-
-            ++id;
+            // auto tup = dist.update_get_min_pair(id, min_id, neighbor_id);
+            // min_id = std::get<0>(tup);
+            // neighbor_id = std::get<1>(tup);
         }
 
         size_t final_root = dist.get_remaining_cluster_id();
