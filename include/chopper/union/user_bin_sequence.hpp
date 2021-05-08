@@ -1,25 +1,39 @@
 #pragma once
 
 #include <vector>
-#include <cmath>
-#include <fstream>
-#include <future>
-#include <tuple>
+#include <queue>
+#include <functional>
 #include <limits>
+#include <fstream>
+
+#include <future>
+#include <barrier>
+
+#include <cmath>
+#include <cstddef>
+#include <cassert>
 
 #include <seqan3/std/filesystem>
 #include <seqan3/std/ranges>
-#include <seqan3/range/views/async_input_buffer.hpp>
+#include <seqan3/io/views/async_input_buffer.hpp>
 
 #include <chopper/union/hyperloglog.hpp>
-#include <chopper/union/distance_matrix.hpp>
-#include <chopper/union/clustering_node.hpp>
 
 #include <robin_hood.h>
 
 struct user_bin_sequence
 {
 private:
+    //!\brief type for a node in the clustering tree when for the rearrangement
+    struct clustering_node 
+    {
+        // children in the tree
+        size_t left;
+        size_t right;
+        // hll sketch of the union if the node is still a root
+        hyperloglog hll;
+    };
+
     //!\brief A reference to the filenames of the user input sequences.
     std::vector<std::string> & filenames;
     
@@ -176,11 +190,48 @@ private:
                       size_t const last,
                       size_t const num_threads)
     {
+        assert(num_threads >= 1);
+
+        //!\brief element of the second priority queue layer of the distance matrix
+        struct neighbor
+        {
+            double dist;
+            size_t id;
+
+            bool operator>(neighbor const & other) const
+            {
+                return dist > other.dist;
+            }
+        };
+
+        //!\brief type of a min heap based priority queue
+        using prio_queue = std::priority_queue<neighbor, std::vector<neighbor>, std::greater<neighbor>>;
+
+        /*!\brief internal map that stores the distances
+        *
+        * The first layer is a hash map with the ids of active clusters as keys.
+        * The values (second layer) are priority queues with neighbors of the cluster 
+        * with the respective key in the first layer.
+        * These neighbors are themselves clusters with an id and store a distance to the 
+        * cluster of the first layer.
+        */
+        robin_hood::unordered_map<size_t, prio_queue> dist;
+        
+        // clustering tree
         robin_hood::unordered_map<size_t, clustering_node> clustering;
+
+        // cache for hll cardinality estimates
         robin_hood::unordered_map<size_t, double> estimates;
-        distance_matrix dist(clustering, estimates, num_threads);
 
         size_t const none = std::numeric_limits<size_t>::max();
+
+        // every thread will write its observed id with minimal distance to some other here
+        // id == none means that the thread observed only empty or no priority queues
+        std::vector<size_t> min_ids(num_threads, none);
+        
+        // these will be the new ids for new clusters
+        // the first one is invalid, but it will be incremented before it is used for the first time
+        size_t id = last - 1;
 
         // initialize clustering and estimates
         for (size_t i = first; i < last; ++i)
@@ -198,26 +249,170 @@ private:
             estimates[previous_rightmost] = sketches[previous_rightmost].estimate();
         }
         
-        // initalize distance matrix
-        dist.initialize();
-
-        // keep merging nodes until we have a complete tree
-        for (size_t id = last; dist.size() > 1; ++id)
+        // only the keys are needed when iterating through the clustering later
+        auto to_only_key = [] (robin_hood::unordered_map<size_t, clustering_node>::value_type const & v)
         {
-            auto [min_id, neighbor_id] = dist.get_min_pair();
-            
+            return v.first;
+        };
+
+        // async buffer to iterate through the clustering in parallel during the initialization
+        auto clustering_buffer = clustering 
+                               | std::views::transform(to_only_key)
+                               | seqan3::views::async_input_buffer(num_threads * 5);
+        
+        // a key and pointer is needed when iterating through dist later, because the 
+        // async_input_buffer moves the values from the range
+        auto to_key_and_pointer = [] (robin_hood::unordered_map<size_t, prio_queue>::value_type & v)
+        {
+            return std::make_tuple(v.first, &v.second);
+        };
+
+        // async buffer to iterate through the distance matrix in parallel when updating it
+        // this assignment here is just to declare the variable with the correct type
+        // it will be reset in every iteration in the end of the critical clustering update
+        auto dist_buffer = dist 
+                         | std::views::transform(to_key_and_pointer)
+                         | seqan3::views::async_input_buffer(num_threads * 5);
+        
+
+        // merging two clusters, deleting the old ones and inserting the new one is the synchronisation step
+        std::barrier critical_clustering_update(static_cast<std::ptrdiff_t>(num_threads), [&] ()
+        {
+            // increment id for the new cluster (must be done here at the beginning)
+            ++id;
+
+            // compute the final min_id from the min_ids of the worker threads
+            size_t min_id = min_ids[0];
+            double min_dist = std::numeric_limits<double>::max();
+            for (auto candidate_id : min_ids)
+            {
+                // check if the thread saw any id
+                if (candidate_id == none) continue;
+
+                neighbor const & curr = dist.at(candidate_id).top();
+                if (curr.dist < min_dist)
+                {
+                    min_dist = curr.dist;
+                    min_id = candidate_id;
+                }
+            }
+
+            size_t neighbor_id = dist.at(min_id).top().id;
+
             // merge the two nodes with minimal distance together insert the new node into the clustering
             clustering[id] = {min_id, neighbor_id, std::move(clustering.at(min_id).hll)};
             estimates[id] = clustering.at(id).hll.merge_and_estimate_SIMD(clustering.at(neighbor_id).hll);
+            
+            // remove old clusters
+            dist.erase(min_id);
+            dist.erase(neighbor_id);
 
-            // insert new cluster and update distances 
-            dist.update(id, min_id, neighbor_id);
-            // auto tup = dist.update_get_min_pair(id, min_id, neighbor_id);
-            // min_id = std::get<0>(tup);
-            // neighbor_id = std::get<1>(tup);
+            // initialize priority queue for the new cluster 
+            dist[id];
+
+            // reset the async buffer of the distance matrix for the following updating step
+            dist_buffer = dist 
+                         | std::views::transform(to_key_and_pointer)
+                         | seqan3::views::async_input_buffer(num_threads * 5);
+        });
+
+        // initialize priority queues in the distance matrix (sequentially)
+        for (auto & [i, i_node] : clustering)
+        {
+            // empty priority queue for every item in clustering
+            dist[i];
         }
 
-        size_t final_root = dist.get_remaining_cluster_id();
+        auto worker = [&] (size_t thread_id)
+        {
+            // minimum distance exclusively for this thread
+            double min_dist = std::numeric_limits<double>::max();
+
+            // initialize all the priority queues of the distance matrix
+            // while doing that, compute the first min_id
+            for (auto i : clustering_buffer)
+            {
+                for (auto const & [j, j_node] : clustering)
+                {
+                    // we only want one diagonal of the distance matrix
+                    if (i < j)
+                    {
+                        // this must be a copy, because merging changes the hll sketch
+                        hyperloglog temp_hll = sketches.at(i);
+                        double const estimate_ij = temp_hll.merge_and_estimate_SIMD(j_node.hll);
+                        // Jaccard distance estimate
+                        double const distance = 2 - (estimates.at(i) + estimates.at(j)) / estimate_ij;
+                        dist.at(i).push({distance, j});
+                    }
+                }
+                if (dist.at(i).empty()) continue;
+
+                // check if the just initialized priority queue contains the minimum value for this thread
+                neighbor const & curr = dist.at(i).top();
+                if (curr.dist < min_dist)
+                {
+                    min_dist = curr.dist;
+                    min_ids[thread_id] = i;
+                }
+            }
+
+            // main loop of the clustering
+            // keep merging nodes until we have a complete tree
+            while (dist.size() > 1)
+            {
+                // synchronize and perform critical update                
+                critical_clustering_update.arrive_and_wait();
+
+                // reset values for the computation of the new minimum
+                min_ids[thread_id] = none;
+                min_dist = std::numeric_limits<double>::max();
+ 
+                hyperloglog const new_hll = clustering.at(id).hll;
+                
+                // update distances in dist 
+                // while doing that, compute the new min_id
+                for (auto [i, prio_q_ptr] : dist_buffer)
+                {
+                    if (i == id) continue;
+
+                    // this must be a copy, because merge_and_estimate_SIMD() changes the hll
+                    hyperloglog temp_hll = new_hll;
+                    double const estimate_ij = temp_hll.merge_and_estimate_SIMD(clustering.at(i).hll);
+                    // Jaccard distance estimate
+                    double const distance = 2 - (estimates.at(i) + estimates.at(id)) / estimate_ij;
+                    prio_q_ptr->push({distance, id});
+
+                    // make sure the closest neighbor is not yet deleted (this is a lazy update)
+                    while (!prio_q_ptr->empty() && !dist.contains(prio_q_ptr->top().id))
+                    {
+                        prio_q_ptr->pop();
+                    }
+
+                    if (prio_q_ptr->empty()) continue;
+
+                    // check if the just updated priority queue contains the minimum value for this thread
+                    neighbor const & curr = prio_q_ptr->top();
+                    if (curr.dist < min_dist)
+                    {
+                        min_dist = curr.dist;
+                        min_ids[thread_id] = i;
+                    }
+                }
+                
+            }
+        };
+
+        // launch threads with worker
+        std::vector<decltype(std::async(std::launch::async, worker, size_t{}))> handles;
+
+        for (size_t i = 0; i < num_threads; ++i)
+            handles.emplace_back(std::async(std::launch::async, worker, i));
+
+        // wait for the threads to finish
+        for (auto & handle : handles)
+            handle.get();
+
+        size_t final_root = dist.begin()->first;
 
         // rotate the previous rightmost to the left so that it has the correct place in the permutation
         if (first != 0)
