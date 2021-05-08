@@ -10,7 +10,7 @@
 #include <lemon/static_graph.h>
 
 #include <seqan3/utility/char_operations/predicate.hpp>
-#include <seqan3/range/detail/misc.hpp>
+#include <seqan3/core/range/detail/misc.hpp>
 #include <seqan3/range/views/take_until.hpp>
 #include <seqan3/range/views/take_line.hpp>
 

@@ -5,9 +5,9 @@
 #include <string> 
 
 #include <seqan3/argument_parser/all.hpp>
-#include <seqan3/range/views/kmer_hash.hpp>
+#include <seqan3/search/views/kmer_hash.hpp>
 #include <seqan3/io/sequence_file/input.hpp>
-#include <seqan3/range/views/async_input_buffer.hpp>
+#include <seqan3/io/views/async_input_buffer.hpp>
 
 #include <chopper/build/read_data_file_and_set_high_level_bins.hpp>
 #include <chopper/pack/pack_config.hpp>

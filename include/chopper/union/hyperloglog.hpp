@@ -20,7 +20,7 @@
 #include <numeric>
 #include <cassert>
 
-#include <seqan3/range/container/aligned_allocator.hpp>
+#include <seqan3/utility/container/aligned_allocator.hpp>
 
 #include <xxh3.h>
 #include <x86/avx.h>

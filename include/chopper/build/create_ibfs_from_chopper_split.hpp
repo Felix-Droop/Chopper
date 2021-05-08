@@ -9,9 +9,9 @@
 #include <seqan3/core/debug_stream.hpp>
 #include <seqan3/io/sequence_file/all.hpp>
 #include <seqan3/range/views/drop.hpp>
-#include <seqan3/range/views/kmer_hash.hpp>
-#include <seqan3/range/views/take.hpp>
-#include <seqan3/range/views/zip.hpp>
+#include <seqan3/search/views/kmer_hash.hpp>
+#include <seqan3/io/detail/take_view.hpp>
+#include <seqan3/utility/views/zip.hpp>
 #include <seqan3/search/dream_index/interleaved_bloom_filter.hpp>
 
 #include <chopper/build/batch.hpp>

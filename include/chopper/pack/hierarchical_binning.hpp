@@ -9,7 +9,7 @@
 #include <vector>
 #include <chrono>
 
-#include <seqan3/range/views/to.hpp>
+#include <seqan3/utility/views/to.hpp>
 #include <seqan3/core/debug_stream.hpp>
 #include <seqan3/std/filesystem>
 
