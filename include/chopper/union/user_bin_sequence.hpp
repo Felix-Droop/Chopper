@@ -350,7 +350,7 @@ private:
                 
                 // update distances in dist 
                 // while doing that, compute the new min_id
-                #pragma omp for schedule(nonmonotonic: static)
+                #pragma omp for schedule(static)
                 for (size_t i = 0; i < dist.size(); ++i)
                 {
                     size_t other_id = dist[i].id;
