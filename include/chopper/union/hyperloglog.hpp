@@ -302,15 +302,23 @@ public:
      */
     void restore(std::istream& is) 
     {
-        uint8_t b = 0;
-        is.read((char*)&b, sizeof(b));
-        hyperloglog tempHLL(b);
-        is.read((char*)&(tempHLL.M_[0]), sizeof(M_[0]) * tempHLL.m_);
-        if (is.fail())
+        try
         {
-           throw std::runtime_error("Failed to restore a HyperLogLog sketch from a file.");
-        }       
-        swap(tempHLL);
+            uint8_t b = 0;
+            is.read((char*)&b, sizeof(b));
+            hyperloglog tempHLL(b);
+            is.read((char*)&(tempHLL.M_[0]), sizeof(M_[0]) * tempHLL.m_);
+            if (is.fail())
+            {
+                throw std::runtime_error("Failed to restore a HyperLogLog sketch from a file.");
+            }       
+            swap(tempHLL);
+        }
+        catch (std::invalid_argument const & err)
+        {
+            // turn the invalid argument error to a runtime error, because it is dependent on the file contents here
+            throw std::runtime_error("Failed to restore a HyperLogLog sketch from a file.");
+        }
     }
 
 private:

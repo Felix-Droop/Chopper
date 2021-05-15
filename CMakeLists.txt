@@ -4,15 +4,20 @@ cmake_minimum_required (VERSION 3.8...3.18)
 
 # Define the application name and version.
 project (chopper VERSION 1.0.0)
+
+# make C++20 the default standard
 if (NOT CMAKE_CXX_FLAGS)
-    set (CMAKE_CXX_FLAGS "-std=c++20")
+    set (CMAKE_CXX_FLAGS "-std=c++20" CACHE STRING "default C++ standard" FORCE)
 endif ()
 
-## BUILD
-
-# add recommended compiler flags for SIMDe
+# add recommended C++ compiler flags for SIMDe
 set (CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG -fopenmp-simd -DSIMDE_ENABLE_OPENMP -march=native" CACHE STRING 
 "recommended compiler flags for SIMDe" FORCE)
+
+# add C++ compiler flags for OpenMP
+set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fopenmp" CACHE STRING "OpenMP to compiler flag" FORCE)
+
+## BUILD
 
 # Make Release default build type
 if (NOT CMAKE_BUILD_TYPE)

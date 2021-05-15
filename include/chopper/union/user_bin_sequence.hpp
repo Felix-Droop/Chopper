@@ -1,25 +1,26 @@
 #pragma once
 
-#include <vector>
-#include <queue>
+#include <cmath>
+#include <random>
 #include <functional>
+
+#include <cassert>
 #include <limits>
+#include <utility>
+
 #include <fstream>
 
-#include <future>
-#include <barrier>
+#include <vector>
+#include <queue>
 
-#include <cmath>
-#include <cstddef>
-#include <cassert>
+#include <omp.h>
+
+#include <robin_hood.h>
 
 #include <seqan3/std/filesystem>
-#include <seqan3/std/ranges>
-#include <seqan3/io/views/async_input_buffer.hpp>
 
 #include <chopper/union/hyperloglog.hpp>
 
-#include <robin_hood.h>
 
 struct user_bin_sequence
 {
@@ -33,6 +34,31 @@ private:
         // hll sketch of the union if the node is still a root
         hyperloglog hll;
     };
+
+    //!\brief element of the second priority queue layer of the distance matrix
+    struct neighbor
+    {
+        size_t id;
+        double dist;
+
+        bool operator>(neighbor const & other) const
+        {
+            return dist > other.dist;
+        }
+    };
+
+    //!\brief type of a min heap based priority queue
+    using prio_queue = std::priority_queue<neighbor, std::vector<neighbor>, std::greater<neighbor>>;
+
+    //!\brief entry of the distance matrix that has the id of a cluster with its neighbors in a prio queue
+    struct entry
+    {
+        size_t id;
+        prio_queue pq;
+    };
+
+    //!\brief type of the distance matrix for the clustering for the rearrangement
+    using distance_matrix = std::vector<entry>;
 
     //!\brief A reference to the filenames of the user input sequences.
     std::vector<std::string> & filenames;
@@ -70,29 +96,17 @@ public:
             {
                 std::filesystem::path path = hll_dir / std::filesystem::path(filename).stem();
                 path += ".hll";
+                std::ifstream hll_fin(path, std::ios::binary);
 
                 // the sketch bits will be automatically read from the files
-                sketches.emplace_back();
-
-                std::ifstream hll_fin(path, std::ios::binary);
-                sketches.back().restore(hll_fin);
+                sketches.emplace_back().restore(hll_fin);
             }
-        }
-        catch (std::ios::failure const & fail)
-        {
-            std::cerr << "[CHOPPER PACK ERROR] Something went wrong trying to read the HyperLogLog sketches from files:\n"
-                      << fail.what() << '\n';
-
         }
         catch (std::runtime_error const & err)
         {
             std::cerr << "[CHOPPER PACK ERROR] Something went wrong trying to read the HyperLogLog sketches from files:\n"
                       << err.what() << '\n';
-        }
-        catch (std::invalid_argument const & err)
-        {
-            std::cerr << "[CHOPPER PACK ERROR] Something went wrong trying to read the HyperLogLog sketches from files:\n"
-                      << err.what() << '\n';
+            exit(1);
         }
     }
 
@@ -102,40 +116,27 @@ public:
      * \param[in] num_threads the number of threads to use
      * \param[out] estimates output table
      */
-    void estimate_interval_unions(std::vector<std::vector<uint64_t>> & estimates, size_t const num_threads)
+    void estimate_interval_unions(std::vector<std::vector<uint64_t>> & estimates, size_t const num_threads_)
     {
         estimates.clear();
         size_t const n = filenames.size();
         estimates.resize(n);
 
-        auto indices = std::views::iota(0u, n)
-                     | seqan3::views::async_input_buffer(num_threads * 5);
-        
-        auto worker = [&] ()
+        size_t const chunk_size_ = std::floor(std::sqrt(n));
+
+        #pragma omp parallel for num_threads(num_threads_) schedule(nonmonotonic: dynamic, chunk_size_)
+        for (size_t i = 0; i < n; ++i)
         {
-            for (auto i : indices)
+            estimates[i].resize(n - i);
+            estimates[i][0] = user_bin_kmer_counts[i];
+            hyperloglog temp_hll = sketches[i];
+
+            for (size_t j = i + 1; j < n; ++j)
             {
-                estimates[i].resize(n - i);
-                estimates[i][0] = user_bin_kmer_counts[i];
-                hyperloglog temp_hll = sketches[i];
-
-                for (size_t j = i + 1; j < n; ++j)
-                {
-                    // merge next sketch into the current union
-                    estimates[i][j - i] = static_cast<uint64_t>(temp_hll.merge_and_estimate_SIMD(sketches[j]));
-                }
+                // merge next sketch into the current union
+                estimates[i][j - i] = static_cast<uint64_t>(temp_hll.merge_and_estimate_SIMD(sketches[j]));
             }
-        };
-
-        // launch threads with worker
-        std::vector<decltype(std::async(std::launch::async, worker))> handles;
-
-        for (size_t i = 0; i < num_threads; ++i)
-            handles.emplace_back(std::async(std::launch::async, worker));
-
-        // wait for the threads to finish
-        for (auto & handle : handles)
-            handle.get();
+        }
     }
 
     /*!\brief Rearrange filenames, sketches and counts such that similar bins are close to each other
@@ -161,7 +162,370 @@ public:
             ++last;
         }
 
-        // apply permutation to filenames and sketches
+        apply_permutation(permutation);
+    }
+
+private:
+    /*!\brief Perform an agglomerative clustering variant on the index range [first:last)
+     * \param[in] first id of the first cluster of the interval
+     * \param[in] last id of the last cluster of the interval plus one
+     * \param[in] num_threads the number of threads to use
+     * \param[out] permutation append the new order to this
+     */
+    void cluster_bins(std::vector<size_t> & permutation,
+                      size_t const first,
+                      size_t const last,
+                      size_t const num_threads_)
+    {
+        assert(num_threads_ >= 1);
+        
+        size_t const n = filenames.size();
+        size_t const chunk_size_ = std::floor(std::sqrt(n));
+        
+        size_t const prune_steps = std::floor(std::sqrt(n));
+        size_t steps_without_prune = 0;
+        
+        size_t const none = std::numeric_limits<size_t>::max();
+        /* internal map that stores the distances
+        *
+        * The first layer is a hash map with the ids of active clusters as keys.
+        * The values (second layer) are priority queues with neighbors of the cluster 
+        * with the respective key in the first layer.
+        * These neighbors are themselves clusters with an id and store a distance to the 
+        * cluster of the first layer.
+        */
+        distance_matrix dist;
+        dist.reserve(n + 1);
+
+        // map that indicates which ids of clusters are still in the distance matrix
+        // the values are the indices where the priority queue for the given id as key can be found in dist
+        robin_hood::unordered_flat_map<size_t, size_t> remaining_ids;
+
+        // clustering tree stored implicitly in a vector
+        std::vector<clustering_node> clustering;
+        clustering.reserve(2 * n);
+
+        // cache for hll cardinality estimates
+        std::vector<double> estimates;
+        estimates.reserve(2 * n);
+
+        // every thread will write its observed id with minimal distance to some other here
+        // id == none means that the thread observed only empty or no priority queues
+        std::vector<size_t> min_ids(num_threads_, none);
+        
+        // these will be the new ids for new clusters
+        // the first one is invalid, but it will be incremented before it is used for the first time
+        size_t new_id = last - 1;
+
+        // initialize clustering and estimates
+        for (size_t id = first; id < last; ++id)
+        {
+            // id i is at the index i - first
+            clustering.push_back({none, none, sketches[id]});
+            estimates.emplace_back(sketches[id].estimate());
+        }
+
+        // if this is not the first group, we want to have one overlapping bin
+        size_t previous_rightmost = none;
+        if (first != 0)
+        {
+            // For all other clusters, their id is also their index in filesnames, sketches etc. .
+            // This is important, because their id is then inserted into the clustering.
+            // This does not work for previous rightmost, because its index does not necessarily lie on
+            // the continuous spectrum from first to last. We run into a problem, because the entries are
+            // stored in vectors. Therefore we give previous_rightmost a different id (==last). This is
+            // fine, because we only need the HLL sketch of the actual index. previous_rightmost will be ignored
+            // in the traceback anyway and won't be added to the permutation in this step.
+            size_t actual_previous_rightmost = permutation.back();
+            ++new_id;
+            previous_rightmost = new_id;
+
+            clustering.push_back({none, none, sketches[actual_previous_rightmost]});
+            estimates.emplace_back(sketches[actual_previous_rightmost].estimate());
+        }
+
+        // initialize priority queues in the distance matrix (sequentially)
+        for (size_t id = first; id < first + clustering.size(); ++id)
+        {
+            // empty priority queue for every item in clustering
+            dist.push_back({id, prio_queue{}});
+            remaining_ids[id] = id - first;
+        }
+
+        #pragma omp parallel num_threads(num_threads_)
+        {
+            double min_dist = std::numeric_limits<double>::max();
+            // minimum distance exclusively for this thread
+
+            // initialize all the priority queues of the distance matrix
+            // while doing that, compute the first min_id
+            #pragma omp for schedule(nonmonotonic: dynamic, chunk_size_)
+            for (size_t i = 0; i < clustering.size(); ++i)
+            {
+                for (size_t j = 0; j < clustering.size(); ++j)
+                {
+                    // we only want one diagonal of the distance matrix
+                    if (i < j)
+                    {
+                        // this must be a copy, because merging changes the hll sketch
+                        hyperloglog temp_hll = clustering[i].hll;
+                        double const estimate_ij = temp_hll.merge_and_estimate_SIMD(clustering[j].hll);
+                        // Jaccard distance estimate
+                        double const distance = 2 - (estimates[i] + estimates[j]) / estimate_ij;
+                        dist[i].pq.push({j + first, distance});
+                    }
+                }
+                if (dist[i].pq.empty()) continue;
+
+                // check if the just initialized priority queue contains the minimum value for this thread
+                neighbor const & curr = dist[i].pq.top();
+                if (curr.dist < min_dist)
+                {
+                    min_dist = curr.dist;
+                    min_ids[omp_get_thread_num()] = dist[i].id;
+                }
+            } // implicit barrier
+            
+            // a single thread shuffles dist to approximately balance loads in static scheduling
+            #pragma omp single
+            random_shuffle(dist, remaining_ids);
+
+            // main loop of the clustering
+            // keep merging nodes until we have a complete tree
+            while (remaining_ids.size() > 1)
+            {
+                #pragma omp single
+                {
+                    // perform critical update                
+                    // increment id for the new cluster (must be done at the beginning)
+                    ++new_id;
+
+                    // compute the final min_id from the min_ids of the worker threads
+                    size_t min_id = min_ids[0];
+                    double min_dist = std::numeric_limits<double>::max();
+                    for (auto candidate_id : min_ids)
+                    {
+                        // check if the thread saw any id
+                        if (candidate_id == none) continue;
+
+                        size_t const dist_index = remaining_ids.at(candidate_id);
+                        neighbor const & curr = dist[dist_index].pq.top();
+                        if (curr.dist < min_dist)
+                        {
+                            min_dist = curr.dist;
+                            min_id = candidate_id;
+                        }
+                    }
+
+                    size_t const min_index = remaining_ids.at(min_id); // how can min_id be none?
+                    size_t const neighbor_id = dist[min_index].pq.top().id;
+
+                    // merge the two nodes with minimal distance together insert the new node into the clustering
+                    clustering.push_back({min_id, neighbor_id, std::move(clustering[min_id - first].hll)});
+                    estimates.emplace_back(clustering.back().hll
+                                                .merge_and_estimate_SIMD(clustering[neighbor_id - first].hll));
+                    
+                    // remove old ids
+                    remaining_ids.erase(min_id);
+                    remaining_ids.erase(neighbor_id);
+
+                    // overwrite one of the removed entries with the new one
+                    remaining_ids[new_id] = min_index;
+                    dist[min_index] = {new_id, prio_queue{}};
+
+                    // prune the distance matrix to reduce overhead due to inactive entries
+                    ++steps_without_prune;
+                    if (steps_without_prune > prune_steps)
+                    {
+                        prune(dist, remaining_ids);
+                        steps_without_prune = 0;
+                    }
+                } // implicit barrier
+
+                // reset values for the computation of the new minimum
+                min_ids[omp_get_thread_num()] = none;
+                min_dist = std::numeric_limits<double>::max();
+ 
+                hyperloglog const new_hll = clustering.back().hll;
+                
+                // update distances in dist 
+                // while doing that, compute the new min_id
+                #pragma omp for schedule(nonmonotonic: static)
+                for (size_t i = 0; i < dist.size(); ++i)
+                {
+                    size_t other_id = dist[i].id;
+                    if (other_id == new_id || !remaining_ids.contains(other_id)) continue;
+
+                    // this must be a copy, because merge_and_estimate_SIMD() changes the hll
+                    hyperloglog temp_hll = new_hll;
+                    double const estimate_ij = temp_hll.merge_and_estimate_SIMD(clustering[other_id - first].hll);
+                    // Jaccard distance estimate
+                    double const distance = 2 - (estimates[other_id - first] + estimates.back()) / estimate_ij;
+                    dist[i].pq.push({new_id, distance});
+
+                    // make sure the closest neighbor is not yet deleted (this is a lazy update)
+                    while (!remaining_ids.contains(dist[i].pq.top().id))
+                    {
+                        dist[i].pq.pop();
+                    }
+
+                    // check if the just updated priority queue contains the minimum value for this thread
+                    neighbor const & curr = dist[i].pq.top();
+                    if (curr.dist < min_dist)
+                    {
+                        min_dist = curr.dist;
+                        min_ids[omp_get_thread_num()] = other_id;
+                    }
+                } // implicit barrier
+            }
+        } // end of the parallel region
+
+        size_t final_root_index = remaining_ids.begin()->second;
+        size_t final_root_id = dist[final_root_index].id;
+
+        // rotate the previous rightmost to the left so that it has the correct place in the permutation
+        if (first != 0)
+        {
+            rotate(clustering, previous_rightmost, first, final_root_id);
+        }
+
+        // traceback into permutation and ignore the previous rightmost
+        trace(clustering, permutation, previous_rightmost, first, final_root_id);
+    }
+
+    /*!\brief Randomly entries in dist while keeping track of the changes of indices
+     * \param[in] dist the distance matrix (vector of priority queues) to shuffle
+     * \param[in] remaining_ids the map with information about which ids remain at which index
+     */
+    void random_shuffle(distance_matrix & dist, robin_hood::unordered_flat_map<size_t, size_t> & remaining_ids)
+    {
+        size_t const n = dist.size();
+
+        std::random_device rd;
+        // random generator seeded with device's random bit source
+        std::mt19937 gen(rd());
+
+        for (size_t i = 0; i < n - 1; ++i)
+        {
+            std::uniform_int_distribution<size_t> distrib(i, n - 1);
+            size_t const swap_i = distrib(gen);
+
+            size_t const id = dist[i].id;
+            size_t const swap_id = dist[swap_i].id;
+
+            // swap entries and update the reming ids, because the indices in dist changed
+            std::swap(dist[i], dist[swap_i]);
+            std::swap(remaining_ids[id], remaining_ids[swap_id]);
+        }
+    }
+
+    /*!\brief Delete inactive entries out of dist and shrink to fit its size while keeping track of the changes of indices
+     * \param[in] dist the distance matrix (vector of priority queues) to prune
+     * \param[in] remaining_ids the map with information about which ids remain at which index
+     */
+    void prune(distance_matrix & dist, robin_hood::unordered_flat_map<size_t, size_t> & remaining_ids)
+    {
+        if (dist.empty()) return;
+
+        // index of the first entry after the valid range
+        size_t valid_range_end = 0;
+        // index of the first entry before the invalid range
+        size_t invalid_range_start = dist.size() - 1;
+
+        while (valid_range_end != invalid_range_start)
+        {
+            if (remaining_ids.contains(dist[valid_range_end].id))
+            {
+                ++valid_range_end;
+            }
+            else if (!remaining_ids.contains(dist[invalid_range_start].id))
+            {
+                --invalid_range_start;
+            }
+            else 
+            {
+                // If we arrive here, then valid_range_end has an invalid id
+                // and invalid_range_start has a valid id. The correspoding entries should be swapped
+                std::swap(dist[valid_range_end], dist[invalid_range_start]);
+                
+                // update the index of the valid entry
+                remaining_ids.at(dist[valid_range_end].id) = valid_range_end; 
+            }
+        }
+
+        // check the last element between the valid and invalid range
+        if (remaining_ids.contains(dist[valid_range_end].id))
+        {
+            ++valid_range_end;
+        }
+
+        // cut off invalid values
+        dist.resize(valid_range_end);
+    }
+
+    /*!\brief Rotate the previous rightmost bin to the left of the clustering tree
+     * \param[in, out] clustering the tree to do the rotation on
+     * \param[in] previous_rightmost the id of the node to be rotated to the left
+     * \param[in] id the id of the current node
+     * 
+     * \return whether previous rightmost was in the subtree rooted at id
+     */
+    bool rotate(std::vector<clustering_node> & clustering,
+                size_t const previous_rightmost,
+                size_t const first,
+                size_t const id)
+    {
+        if (id == previous_rightmost) return true;
+        
+        clustering_node & curr = clustering[id - first];
+        if (curr.left == std::numeric_limits<size_t>::max())
+        {
+            return false;
+        }
+
+        // nothing to do if previous_rightmost is in the left subtree
+        if(rotate(clustering, previous_rightmost, first, curr.left)) return true;
+        
+        // rotate if previous_rightmost is in the right subtree
+        if(rotate(clustering, previous_rightmost, first, curr.right))
+        {
+            std::swap(curr.left, curr.right);
+            return true; 
+        }
+
+        // previous_rightmost is not in this subtree
+        return false;
+    }
+
+    /*!\brief Do a recursive traceback to find the order of leaves in the clustering tree 
+     * \param[in] clustering the tree to do the traceback on
+     * \param[out] permutation append the new order to this
+     * \param[in] id the id of the current node
+     * \param[in] previous_rightmost the id of the node on the left which should be ignored
+     */
+    void trace(std::vector<clustering_node> const & clustering,
+               std::vector<size_t> & permutation,
+               size_t const previous_rightmost,
+               size_t const first,
+               size_t const id)
+    {
+        clustering_node const & curr = clustering[id - first];
+        
+        if (curr.left == std::numeric_limits<size_t>::max())
+        {
+            if (id != previous_rightmost) permutation.push_back(id);
+            return;
+        }
+
+        trace(clustering, permutation, previous_rightmost, first, curr.left);
+        trace(clustering, permutation, previous_rightmost, first, curr.right);
+    }
+
+    /*!\brief Apply a given permutation to filenames, user_bin_kmer_counts and sketches
+     * \param[in] permutation the permutation to apply
+     */
+    void apply_permutation(std::vector<size_t> & permutation)
+    {
         for (size_t i = 0; i < permutation.size(); ++i)
         {
             size_t current = i;
@@ -176,309 +540,5 @@ public:
             }
             permutation[current] = current;
         }
-    }
-
-private:
-    /*!\brief Perform an agglomerative clustering variant on the index range [first:last)
-     * \param[in] first id of the first cluster of the interval
-     * \param[in] last id of the last cluster of the interval plus one
-     * \param[in] num_threads the number of threads to use
-     * \param[out] permutation append the new order to this
-     */
-    void cluster_bins(std::vector<size_t> & permutation,
-                      size_t const first,
-                      size_t const last,
-                      size_t const num_threads)
-    {
-        assert(num_threads >= 1);
-
-        //!\brief element of the second priority queue layer of the distance matrix
-        struct neighbor
-        {
-            double dist;
-            size_t id;
-
-            bool operator>(neighbor const & other) const
-            {
-                return dist > other.dist;
-            }
-        };
-
-        //!\brief type of a min heap based priority queue
-        using prio_queue = std::priority_queue<neighbor, std::vector<neighbor>, std::greater<neighbor>>;
-
-        /*!\brief internal map that stores the distances
-        *
-        * The first layer is a hash map with the ids of active clusters as keys.
-        * The values (second layer) are priority queues with neighbors of the cluster 
-        * with the respective key in the first layer.
-        * These neighbors are themselves clusters with an id and store a distance to the 
-        * cluster of the first layer.
-        */
-        robin_hood::unordered_map<size_t, prio_queue> dist;
-        
-        // clustering tree
-        robin_hood::unordered_map<size_t, clustering_node> clustering;
-
-        // cache for hll cardinality estimates
-        robin_hood::unordered_map<size_t, double> estimates;
-
-        size_t const none = std::numeric_limits<size_t>::max();
-
-        // every thread will write its observed id with minimal distance to some other here
-        // id == none means that the thread observed only empty or no priority queues
-        std::vector<size_t> min_ids(num_threads, none);
-        
-        // these will be the new ids for new clusters
-        // the first one is invalid, but it will be incremented before it is used for the first time
-        size_t id = last - 1;
-
-        // initialize clustering and estimates
-        for (size_t i = first; i < last; ++i)
-        {
-            clustering[i] = {none, none, sketches[i]};
-            estimates[i] = sketches[i].estimate();
-        }
-
-        // if this is not the first group, we want to have one overlapping bin
-        size_t previous_rightmost = none;
-        if (first != 0)
-        {
-            previous_rightmost = permutation.back();
-            clustering[previous_rightmost] = {none, none, sketches[previous_rightmost]};
-            estimates[previous_rightmost] = sketches[previous_rightmost].estimate();
-        }
-        
-        // only the keys are needed when iterating through the clustering later
-        auto to_only_key = [] (robin_hood::unordered_map<size_t, clustering_node>::value_type const & v)
-        {
-            return v.first;
-        };
-
-        // async buffer to iterate through the clustering in parallel during the initialization
-        auto clustering_buffer = clustering 
-                               | std::views::transform(to_only_key)
-                               | seqan3::views::async_input_buffer(num_threads * 5);
-        
-        // a key and pointer is needed when iterating through dist later, because the 
-        // async_input_buffer moves the values from the range
-        auto to_key_and_pointer = [] (robin_hood::unordered_map<size_t, prio_queue>::value_type & v)
-        {
-            return std::make_tuple(v.first, &v.second);
-        };
-
-        // async buffer to iterate through the distance matrix in parallel when updating it
-        // this assignment here is just to declare the variable with the correct type
-        // it will be reset in every iteration in the end of the critical clustering update
-        auto dist_buffer = dist 
-                         | std::views::transform(to_key_and_pointer)
-                         | seqan3::views::async_input_buffer(num_threads * 5);
-        
-
-        // merging two clusters, deleting the old ones and inserting the new one is the synchronisation step
-        std::barrier critical_clustering_update(static_cast<std::ptrdiff_t>(num_threads), [&] ()
-        {
-            // increment id for the new cluster (must be done here at the beginning)
-            ++id;
-
-            // compute the final min_id from the min_ids of the worker threads
-            size_t min_id = min_ids[0];
-            double min_dist = std::numeric_limits<double>::max();
-            for (auto candidate_id : min_ids)
-            {
-                // check if the thread saw any id
-                if (candidate_id == none) continue;
-
-                neighbor const & curr = dist.at(candidate_id).top();
-                if (curr.dist < min_dist)
-                {
-                    min_dist = curr.dist;
-                    min_id = candidate_id;
-                }
-            }
-
-            size_t neighbor_id = dist.at(min_id).top().id;
-
-            // merge the two nodes with minimal distance together insert the new node into the clustering
-            clustering[id] = {min_id, neighbor_id, std::move(clustering.at(min_id).hll)};
-            estimates[id] = clustering.at(id).hll.merge_and_estimate_SIMD(clustering.at(neighbor_id).hll);
-            
-            // remove old clusters
-            dist.erase(min_id);
-            dist.erase(neighbor_id);
-
-            // initialize priority queue for the new cluster 
-            dist[id];
-
-            // reset the async buffer of the distance matrix for the following updating step
-            dist_buffer = dist 
-                         | std::views::transform(to_key_and_pointer)
-                         | seqan3::views::async_input_buffer(num_threads * 5);
-        });
-
-        // initialize priority queues in the distance matrix (sequentially)
-        for (auto & [i, i_node] : clustering)
-        {
-            // empty priority queue for every item in clustering
-            dist[i];
-        }
-
-        auto worker = [&] (size_t thread_id)
-        {
-            // minimum distance exclusively for this thread
-            double min_dist = std::numeric_limits<double>::max();
-
-            // initialize all the priority queues of the distance matrix
-            // while doing that, compute the first min_id
-            for (auto i : clustering_buffer)
-            {
-                for (auto const & [j, j_node] : clustering)
-                {
-                    // we only want one diagonal of the distance matrix
-                    if (i < j)
-                    {
-                        // this must be a copy, because merging changes the hll sketch
-                        hyperloglog temp_hll = sketches.at(i);
-                        double const estimate_ij = temp_hll.merge_and_estimate_SIMD(j_node.hll);
-                        // Jaccard distance estimate
-                        double const distance = 2 - (estimates.at(i) + estimates.at(j)) / estimate_ij;
-                        dist.at(i).push({distance, j});
-                    }
-                }
-                if (dist.at(i).empty()) continue;
-
-                // check if the just initialized priority queue contains the minimum value for this thread
-                neighbor const & curr = dist.at(i).top();
-                if (curr.dist < min_dist)
-                {
-                    min_dist = curr.dist;
-                    min_ids[thread_id] = i;
-                }
-            }
-
-            // main loop of the clustering
-            // keep merging nodes until we have a complete tree
-            while (dist.size() > 1)
-            {
-                // synchronize and perform critical update                
-                critical_clustering_update.arrive_and_wait();
-
-                // reset values for the computation of the new minimum
-                min_ids[thread_id] = none;
-                min_dist = std::numeric_limits<double>::max();
- 
-                hyperloglog const new_hll = clustering.at(id).hll;
-                
-                // update distances in dist 
-                // while doing that, compute the new min_id
-                for (auto [i, prio_q_ptr] : dist_buffer)
-                {
-                    if (i == id) continue;
-
-                    // this must be a copy, because merge_and_estimate_SIMD() changes the hll
-                    hyperloglog temp_hll = new_hll;
-                    double const estimate_ij = temp_hll.merge_and_estimate_SIMD(clustering.at(i).hll);
-                    // Jaccard distance estimate
-                    double const distance = 2 - (estimates.at(i) + estimates.at(id)) / estimate_ij;
-                    prio_q_ptr->push({distance, id});
-
-                    // make sure the closest neighbor is not yet deleted (this is a lazy update)
-                    while (!prio_q_ptr->empty() && !dist.contains(prio_q_ptr->top().id))
-                    {
-                        prio_q_ptr->pop();
-                    }
-
-                    if (prio_q_ptr->empty()) continue;
-
-                    // check if the just updated priority queue contains the minimum value for this thread
-                    neighbor const & curr = prio_q_ptr->top();
-                    if (curr.dist < min_dist)
-                    {
-                        min_dist = curr.dist;
-                        min_ids[thread_id] = i;
-                    }
-                }
-                
-            }
-        };
-
-        // launch threads with worker
-        std::vector<decltype(std::async(std::launch::async, worker, size_t{}))> handles;
-
-        for (size_t i = 0; i < num_threads; ++i)
-            handles.emplace_back(std::async(std::launch::async, worker, i));
-
-        // wait for the threads to finish
-        for (auto & handle : handles)
-            handle.get();
-
-        size_t final_root = dist.begin()->first;
-
-        // rotate the previous rightmost to the left so that it has the correct place in the permutation
-        if (first != 0)
-        {
-            rotate(clustering, previous_rightmost, final_root);
-        }
-
-        // traceback into permutation and ignore the previous rightmost
-        trace(clustering, permutation, final_root, previous_rightmost);
-    }
-
-    /*!\brief Rotate the previous rightmost bin to the left of the clustering tree
-     * \param[in, out] clustering the tree to do the rotation on
-     * \param[in] previous_rightmost the id of the node to be rotated to the left
-     * \param[in] id the id of the current node
-     * 
-     * \return whether previous rightmost was in the subtree rooted at id
-     */
-    bool rotate(robin_hood::unordered_map<size_t, clustering_node> & clustering,
-                size_t const previous_rightmost,
-                size_t const id)
-    {
-        if (id == previous_rightmost) return true;
-        
-        clustering_node & curr = clustering.at(id);
-        if (curr.left == std::numeric_limits<size_t>::max())
-        {
-            return false;
-        }
-
-        // nothing to do if previous_rightmost is in the left subtree
-        if(rotate(clustering, previous_rightmost, curr.left)) return true;
-        
-        // rotate if previous_rightmost is in the right subtree
-        if(rotate(clustering, previous_rightmost, curr.right))
-        {
-            size_t const temp = curr.right;
-            curr.right = curr.left;
-            curr.left = temp;
-            return true; 
-        }
-
-        // previous_rightmost is not in this subtree
-        return false;
-    }
-
-    /*!\brief Do a recursive traceback to find the order of leaves in the clustering tree 
-     * \param[in] clustering the tree to do the traceback on
-     * \param[out] permutation append the new order to this
-     * \param[in] id the id of the current node
-     * \param[in] previous_rightmost the id of the node on the left which should be ignored
-     */
-    void trace(robin_hood::unordered_map<size_t, clustering_node> const & clustering,
-               std::vector<size_t> & permutation,
-               size_t const id,
-               size_t const previous_rightmost)
-    {
-        clustering_node const & curr = clustering.at(id);
-        
-        if (curr.left == std::numeric_limits<size_t>::max())
-        {
-            if (id != previous_rightmost) permutation.push_back(id);
-            return;
-        }
-
-        trace(clustering, permutation, curr.left, previous_rightmost);
-        trace(clustering, permutation, curr.right, previous_rightmost);
     }
 };
