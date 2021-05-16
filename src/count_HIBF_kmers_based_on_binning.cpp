@@ -54,7 +54,7 @@ auto print_kmer_content(chopper_pack_record const & record, size_t const num_bin
                                                       seqan3::fields<seqan3::field::seq>,
                                                       seqan3::type_list<seqan3::format_fasta, seqan3::format_fastq>>;
 
-    robin_hood::unordered_set<uint64_t> kmer_occurence{};
+    robin_hood::unordered_node_set<uint64_t> kmer_occurence{};
 
     size_t low_lvl_kmer_sum = 0;
     bool is_merged = starts_with(record.bin_name, merged_bin_prefix);
