@@ -113,7 +113,7 @@ public:
     /*!\brief For all intervals of filenames: estimate the cardinality of the union
      * of k-mer sets of all sequences in the files of the interval.
      * estimates[i][j] will be the union of the interval i, ..., i+j
-     * \param[in] num_threads the number of threads to use
+     * \param[in] num_threads_ the number of threads to use
      * \param[out] estimates output table
      */
     void estimate_interval_unions(std::vector<std::vector<uint64_t>> & estimates, size_t const num_threads_)
@@ -169,7 +169,7 @@ private:
     /*!\brief Perform an agglomerative clustering variant on the index range [first:last)
      * \param[in] first id of the first cluster of the interval
      * \param[in] last id of the last cluster of the interval plus one
-     * \param[in] num_threads the number of threads to use
+     * \param[in] num_threads_ the number of threads to use
      * \param[out] permutation append the new order to this
      */
     void cluster_bins(std::vector<size_t> & permutation,
@@ -466,6 +466,7 @@ private:
     /*!\brief Rotate the previous rightmost bin to the left of the clustering tree
      * \param[in, out] clustering the tree to do the rotation on
      * \param[in] previous_rightmost the id of the node to be rotated to the left
+     * \param[in] first the id of the first node in the interval to shift the index
      * \param[in] id the id of the current node
      * 
      * \return whether previous rightmost was in the subtree rooted at id
@@ -500,8 +501,9 @@ private:
     /*!\brief Do a recursive traceback to find the order of leaves in the clustering tree 
      * \param[in] clustering the tree to do the traceback on
      * \param[out] permutation append the new order to this
-     * \param[in] id the id of the current node
      * \param[in] previous_rightmost the id of the node on the left which should be ignored
+     * \param[in] first the id of the first node in the interval to shift the index
+     * \param[in] id the id of the current node
      */
     void trace(std::vector<clustering_node> const & clustering,
                std::vector<size_t> & permutation,
