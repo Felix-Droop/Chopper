@@ -7,7 +7,6 @@
 #include <limits>
 #include <numeric>
 #include <vector>
-#include <chrono>
 
 #include <seqan3/utility/views/to.hpp>
 #include <seqan3/core/debug_stream.hpp>
@@ -101,29 +100,15 @@ public:
         // seqan3::debug_stream << std::endl << "Sorted list: " << user_bin_kmer_counts << std::endl << std::endl;
 
         std::vector<std::vector<uint64_t>> union_estimates;
-
-        auto start = std::chrono::high_resolution_clock::now();
-
         // Depending on cli flags given, use HyperLogLog estimates and/or rearrangement algorithms
         if (union_estimate_wanted)
         {
             user_bin_sequence ub_seq(names, user_bin_kmer_counts, hll_dir);
-
-            auto dur = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now() - start);
-            std::cerr << "Reading HLL sketches done. Took " << dur.count() << " seconds.\n";
-            start = std::chrono::high_resolution_clock::now();
             
             if (rearrange_bins_wanted) ub_seq.rearrange_bins(max_ratio, num_threads);
-            
-            dur = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now() - start);
-            std::cerr << "Rearrangement done. Took " << dur.count() << " seconds.\n";
-            start = std::chrono::high_resolution_clock::now();
 
             ub_seq.estimate_interval_unions(union_estimates, num_threads);
         }
-
-        auto dur = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now() - start);
-        std::cerr << "Estimating union cardinalities done. Took " << dur.count() << " seconds.\n";
 
         std::vector<std::vector<size_t>> matrix(num_technical_bins); // rows
         for (auto & v : matrix)
