@@ -281,7 +281,7 @@ private:
 
                 // if the user bin j-1 was not split into multiple technical bins!
                 // I may merge the current user bin j into the former
-                while (j_prime != 0 /*&& ((i - trace[i][j_prime].first) < 2)*/ && get_weight() < minimum)
+                while (j_prime != 0 && ((i - trace[i][j_prime].first) < 2) && get_weight() < minimum)
                 {
                     weight += user_bin_kmer_counts[j_prime];
                     --j_prime;
