@@ -77,7 +77,7 @@ void count_kmers(std::unordered_map<std::string, std::vector<std::string>> const
     }
 
     #pragma omp parallel for schedule(static) num_threads(config.num_threads)
-    for (auto const & cluster : cluster_vector)
+    for (size_t i = 0; i < cluster_vector.size(); ++i)
     {
         // read files
         std::vector<std::vector<seqan3::dna4>> sequence_vector;
