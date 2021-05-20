@@ -115,7 +115,7 @@ void count_kmers(std::unordered_map<std::string, std::vector<std::string>> const
             }
             
             // For one file in the cluster, the file stem is used with the .hll ending
-            std::filesystem::path path = config.hll_dir / std::filesystem::path(cluster.first).stem();
+            std::filesystem::path path = config.hll_dir / std::filesystem::path(cluster_vector[i].first).stem();
             path += ".hll";
             std::ofstream hll_fout(path, std::ios::binary);
             sketch.dump(hll_fout);
