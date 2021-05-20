@@ -81,7 +81,7 @@ void count_kmers(std::unordered_map<std::string, std::vector<std::string>> const
     {
         // read files
         std::vector<std::vector<seqan3::dna4>> sequence_vector;
-        for (auto const & filename : cluster.second)
+        for (auto const & filename : cluster_vector[i].second)
         {
             sequence_file_type fin{filename};
             for (auto & [seq] : fin)
@@ -103,13 +103,13 @@ void count_kmers(std::unordered_map<std::string, std::vector<std::string>> const
         uint64_t size = config.exclusively_hlls ? static_cast<uint64_t>(sketch.estimate()) : result.size();
 
         #pragma omp critical
-        write_cluster_data(cluster, size, fout);
+        write_cluster_data(cluster_vector[i], size, fout);
 
         if (!config.hll_dir.empty())
         {
             // For more than one file in the cluster, Felix doesn't know how to name the file
             // and what exactly is supposed to happen.
-            if (cluster.second.size() > 1)
+            if (cluster_vector[i].second.size() > 1)
             {
                 throw std::runtime_error("This mode sadly was not implemented yet for multiple files grouped together.");
             }
