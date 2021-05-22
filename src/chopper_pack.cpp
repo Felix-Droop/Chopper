@@ -4,6 +4,7 @@
 #include <chopper/pack/hierarchical_binning.hpp>
 #include <chopper/pack/filenames_data_input.hpp>
 #include <chopper/pack/pack_config.hpp>
+// #include <chopper/print_peak_memory_usage.hpp>
 
 int set_up_and_parse_subparser_split(seqan3::argument_parser & parser, pack_config & config)
 {
@@ -25,9 +26,18 @@ int set_up_and_parse_subparser_split(seqan3::argument_parser & parser, pack_conf
 
     parser.add_option(config.bins, 'b', "technical-bins",
                       "Into how many technical bins do you want your sequence data to be packed?");
+    
+    parser.add_option(config.hll_dir, 'd', "hll-dir", 
+                      "If given, the hll sketches are dumped to this directory and restored when they already exist.");
 
     parser.add_option(config.alpha, 'a', "alpha",
                       "The scaling factor to influence the number of merged bins.");
+
+    parser.add_option(config.max_ratio, 'm', "max-ratio",
+                      "The maximal cardinality ratio in the clustering intervals (must be < 1).");
+
+    parser.add_option(config.num_threads, 't', "num-threads",
+                      "The number of threads to use to compute merged HLL sketches.");
 
     parser.add_option(config.output_filename, 'o', "outfile",
                       "An output file name for the binning results.");
@@ -36,6 +46,12 @@ int set_up_and_parse_subparser_split(seqan3::argument_parser & parser, pack_conf
                       "Which column do you want to aggregate your files by? Start counting your columns from 1!",
                       seqan3::option_spec::standard,
                       seqan3::arithmetic_range_validator{3, std::numeric_limits<int>::max()});
+
+    parser.add_flag(config.union_estimate, 'u', "union-estimate",
+                    "Estimate the union of kmer sets to possibly improve the binning.");
+    
+    parser.add_flag(config.rearrange_bins, 'r', "rearrange-bins",
+                    "Do a rearrangement of the bins which takes into account similarity. Only works with -u.");
 
     try
     {
@@ -91,5 +107,7 @@ int chopper_pack(seqan3::argument_parser & parser)
     fout << header_buffer.rdbuf();
     fout << output_buffer.rdbuf();
 
+    // print_peak_memory_usage();
+    
     return 0;
 }

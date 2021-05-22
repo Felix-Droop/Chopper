@@ -1,5 +1,8 @@
 #pragma once
 
-#include <seqan3/argument_parser/argument_parser.hpp>
+#define SEQAN_HAS_ZLIB 1
+#define SEQAN3_HAS_ZLIB 1
+
+#include <seqan3/argument_parser/all.hpp>
 
 int chopper_count(seqan3::argument_parser & parser);

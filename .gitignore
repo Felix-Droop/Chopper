@@ -32,3 +32,9 @@
 
 # build dir
 /build/
+
+# editor configurations
+/.vscode/
+
+# todo files
+*.todo

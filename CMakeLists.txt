@@ -5,6 +5,18 @@ cmake_minimum_required (VERSION 3.8...3.18)
 # Define the application name and version.
 project (chopper VERSION 1.0.0)
 
+# make C++17 the default standard and enforce concept support
+if (NOT CMAKE_CXX_FLAGS)
+    set (CMAKE_CXX_FLAGS "-std=c++17 -fconcepts" CACHE STRING "default C++ standard" FORCE)
+endif ()
+
+# add recommended C++ compiler flags for SIMDe
+set (CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG -fopenmp-simd -DSIMDE_ENABLE_OPENMP -march=native" CACHE STRING 
+"recommended compiler flags for SIMDe" FORCE)
+
+# add OpenMP C++ compiler flag
+set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fopenmp" CACHE STRING "OpenMP compiler flag" FORCE)
+
 ## BUILD
 
 # Make Release default build type
@@ -38,6 +50,11 @@ include (${CMAKE_SOURCE_DIR}/lib/seqan/util/cmake/seqan-config.cmake)
 # Use ccache.
 include ("${SEQAN3_CLONE_DIR}/test/cmake/seqan3_require_ccache.cmake")
 seqan3_require_ccache ()
+
+# Dependency: xxHash
+# We don't need the command line application
+set(XXHASH_BUILD_XXHSUM OFF)
+add_subdirectory("${CMAKE_SOURCE_DIR}/lib/xxHash/cmake_unofficial" "${CMAKE_BINARY_DIR}/lib/xxHash/" EXCLUDE_FROM_ALL)
 
 # Add the application.
 add_subdirectory (src)
