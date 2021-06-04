@@ -112,7 +112,8 @@ public:
 
     /*!\brief For all intervals of filenames: estimate the cardinality of the union
      * of k-mer sets of all sequences in the files of the interval.
-     * estimates[i][j] will be the union of the interval i, ..., i+j
+     * estimates[i][j] will be the union cardinality estimate of the interval j, ..., i.
+     * This unintuitive convention is chosen for cache efficiency in the hierarchical binning.
      * \param[in] num_threads_ the number of threads to use
      * \param[out] estimates output table
      */
@@ -124,17 +125,26 @@ public:
 
         size_t const chunk_size_ = std::floor(std::sqrt(n));
 
-        #pragma omp parallel for num_threads(num_threads_) schedule(nonmonotonic: dynamic, chunk_size_)
-        for (size_t i = 0; i < n; ++i)
+        #pragma omp parallel num_threads(num_threads_)
         {
-            estimates[i].resize(n - i);
-            estimates[i][0] = user_bin_kmer_counts[i];
-            hyperloglog temp_hll = sketches[i];
-
-            for (size_t j = i + 1; j < n; ++j)
+            // initialize estimates
+            #pragma omp for
+            for (size_t i = 0; i < n; ++i)
             {
-                // merge next sketch into the current union
-                estimates[i][j - i] = static_cast<uint64_t>(temp_hll.merge_and_estimate_SIMD(sketches[j]));
+                estimates[i].resize(i + 1);
+            }
+
+            // fill estimates
+            #pragma omp for schedule(nonmonotonic: dynamic, chunk_size_)
+            for (size_t i = 0; i < n; ++i)
+            {
+                estimates[i][i] = user_bin_kmer_counts[i];
+                hyperloglog temp_hll = sketches[i];
+
+                for (size_t j = i + 1; j < n; ++j)
+                {
+                    estimates[j][i] = static_cast<uint64_t>(temp_hll.merge_and_estimate_SIMD(sketches[j]));
+                }
             }
         }
     }

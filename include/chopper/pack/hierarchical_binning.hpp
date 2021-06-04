@@ -184,7 +184,7 @@ private:
         for (size_t j = 1; j < num_user_bins; ++j)
         {
             size_t sum = user_bin_kmer_counts[j] + matrix[0][j - 1];
-            matrix[0][j] = union_estimate_wanted ? union_estimates[0][j] : sum;
+            matrix[0][j] = union_estimate_wanted ? union_estimates[j][0] : sum;
             ll_matrix[0][j] = sum;
             trace[0][j] = {0u, j - 1}; // unnecessary?
         }
@@ -274,14 +274,14 @@ private:
                 auto get_weight = [&] () 
                 {
                     // if we use the union estimate we plug in that value instead of the sum (weight)
-                    // union_estimate[i][j] is the union of {i, ..., i+j}
+                    // union_estimate[i][j] is the union of {j, ..., i}
                     // the + 1 is necessary because j_prime is decremented directly after weight is updated
-                    return union_estimate_wanted ? union_estimates[j_prime + 1][j - (j_prime + 1)] : weight;
+                    return union_estimate_wanted ? union_estimates[j][j_prime + 1] : weight;
                 };
 
                 // if the user bin j-1 was not split into multiple technical bins!
                 // I may merge the current user bin j into the former
-                while (j_prime != 0 /*&& ((i - trace[i][j_prime].first) < 2) && get_weight() < minimum*/)
+                while (j_prime != 0 && ((i - trace[i][j_prime].first) < 2) && get_weight() < minimum)
                 {
                     weight += user_bin_kmer_counts[j_prime];
                     --j_prime;
